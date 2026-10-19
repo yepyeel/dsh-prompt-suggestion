@@ -69,7 +69,7 @@ DSH 0.2.x 没有公开设置导航图标入口，`dsh/nav-icon.ts` 隔离相应�
 
 ## 验证与开发
 
-`pnpm check` 包含严格类型检查、Biome、Vitest、内存构建比对与安装包验证；CI 在 Node.js 22 / 24 上冻结安装后执行同一命令。
+`pnpm check` 包含严格类型检查、Biome、Vitest、内存构建比对与安装包验证，在本地执行。为节省运行额度，仓库已关闭 GitHub Actions CI。
 
 - 规则测试：预算、解析、回合边界、模型选择、volatile 读取、流结束原因。
 - Host 测试：真实本地 HTTP server 搭配受控 Session / LLM，验证成功、错误、Origin、热更新、断开取消、SDK 异常出口。

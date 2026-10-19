@@ -197,7 +197,7 @@ pnpm check
 | `pnpm test:package` | 打包、只安装运行时依赖，验证 Host 导出及 Client 加载协议 |
 | `pnpm check` | 顺序运行类型、静态检查、测试、产物一致性及安装包验证 |
 
-源码在 `src/`；不要直接编辑 `build/` 的生成文件。改动后运行 `pnpm build` 并提交两端产物。GitHub Actions 在 Node.js 22 / 24 上执行冻结安装与 `pnpm check`，防止源码与仓库中的预构建文件不一致。
+源码在 `src/`；不要直接编辑 `build/` 的生成文件。改动后运行 `pnpm build` 并提交两端产物。为节省 GitHub Actions 额度，仓库已关闭自动 CI；提交前请在本地执行 `pnpm check`，核对源码与仓库中的预构建文件一致，并完成类型、静态检查、测试和安装包验证。
 
 - Host 改动：构建后重启 DSH，或在插件列表停用再启用。
 - Client 改动：构建后重新启用插件；必要时刷新页面。`pnpm dev` 负责重建，宿主重载仍由 DSH 管理。

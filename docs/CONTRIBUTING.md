@@ -50,7 +50,7 @@ pnpm lint:fix      # 格式与可安全修复的检查
 
 修复问题时优先增加复现行为测试，使用受控模型流与宿主接口。测试放在 tests/host 或 tests/client；键盘与设置交互用 React + jsdom，取消/超时用 fake timers。
 
-DSH classic loader 的 apply/inject 形态、公开 exports、files 与 GitHub 免构建安装都属于兼容契约。拆模块后必须通过 test:package。CI 在 Node.js 22 / 24 上执行 pnpm check。
+DSH classic loader 的 apply/inject 形态、公开 exports、files 与 GitHub 免构建安装都属于兼容契约。拆模块后必须通过 test:package。仓库已关闭 GitHub Actions CI；提交前需在本地执行 pnpm check。
 
 实际宿主验收包括：插件启用无错误、设置保存与恢复、ghost 显示、Tab/→ 填入不发送、Esc 和 IME、会话切换、明暗主题。UI 改动附截图或录屏，明确区分实际浏览器与 jsdom 验证。
 
