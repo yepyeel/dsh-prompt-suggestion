@@ -1,5 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <rect x="2.75" y="3.75" width="18.5" height="13.5" rx="4" stroke="#247bbf" stroke-width="1.5"/>
-  <path d="M8.5 17.25 8.5 21l4-3.75" fill="#247bbf"/>
-  <path d="M8.75 8.25v5M11.25 6.75v6.5M13.75 8.75v4.5M16.25 10v2.5" stroke="#247bbf" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M13.64 7.67C13.64 11.09 17.07 17.94 23.92 17.94C17.07 17.94 13.64 24.79 13.64 28.21C13.64 24.79 10.22 17.94 3.37 17.94C10.22 17.94 13.64 11.09 13.64 7.67Z" fill="url(#prompt-suggestion-star)"/>
+  <path d="M26.99 4.73C26.99 6.61 28.87 10.38 32.64 10.38C28.87 10.38 26.99 14.14 26.99 16.02C26.99 14.14 25.11 10.38 21.34 10.38C25.11 10.38 26.99 6.61 26.99 4.73Z" fill="url(#prompt-suggestion-star)"/>
+  <path d="M26.99 22.97C26.99 24.34 28.36 27.08 31.1 27.08C28.36 27.08 26.99 29.82 26.99 31.19C26.99 29.82 25.62 27.08 22.88 27.08C25.62 27.08 26.99 24.34 26.99 22.97Z" fill="url(#prompt-suggestion-star)"/>
+  <defs>
+    <linearGradient id="prompt-suggestion-star" x1="7.02" y1="5.8" x2="30.2" y2="31.42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67C7FE"/>
+      <stop offset="1" stop-color="#3F77D8"/>
+    </linearGradient>
+  </defs>
 </svg>
