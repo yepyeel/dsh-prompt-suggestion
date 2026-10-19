@@ -429,6 +429,7 @@ window.__ModuleLoader__.load({
           letterSpacing: style.letterSpacing,
           color: style.color,
           maxLines,
+          keyOffset: Math.max(0, Math.round((lineHeight - 16) / 2)),
         })
         return true
       }, [])
@@ -629,7 +630,10 @@ window.__ModuleLoader__.load({
                 overflow: 'hidden',
               },
             }, suggestion),
-            h('span', { className: 'dsh-ps-key' }, 'Tab'),
+            h('span', {
+              className: 'dsh-ps-key',
+              style: { marginTop: `${box.keyOffset}px` },
+            }, 'Tab'),
           )
           : null,
       )
