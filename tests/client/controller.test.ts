@@ -15,8 +15,8 @@ describe('prediction lifecycle', () => {
   let suggest: ReturnType<
     typeof vi.fn<(id: string, signal: AbortSignal) => Promise<SuggestResponse>>
   >
-  const update = (running: boolean, sessionId = 'one', blank = true) =>
-    controller.update({ sessionId, running, blank })
+  const update = (running: boolean, sessionId = 'one', blank = true, enabled = true) =>
+    controller.update({ sessionId, running, blank, enabled })
   beforeEach(() => {
     vi.useFakeTimers()
     suggest = vi.fn().mockResolvedValue({ suggestion: '继续测试', model: 'fixture/test' })
@@ -70,6 +70,79 @@ describe('prediction lifecycle', () => {
     expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
   })
 
+  it.each(['typing', 'composition', 'disabled', 'session-switch'] as const)(
+    'discards pending results after %s even when the original conditions return',
+    async (change) => {
+      const pending = deferred<SuggestResponse>()
+      suggest.mockReturnValueOnce(pending.promise)
+      update(true)
+      update(false)
+      await vi.advanceTimersByTimeAsync(250)
+      const signal = suggest.mock.calls[0][1]
+      if (change === 'typing') {
+        update(false, 'one', false)
+        update(false)
+      } else if (change === 'composition') {
+        controller.startComposition()
+        controller.endComposition()
+      } else if (change === 'disabled') {
+        update(false, 'one', true, false)
+        update(false)
+      } else {
+        update(false, 'two')
+        update(false)
+      }
+      pending.resolve({ suggestion: 'stale', model: 'fixture/test' })
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(signal.aborted).toBe(true)
+      expect(controller.getSnapshot().kind).not.toBe('shown')
+      expect(suggest).toHaveBeenCalledTimes(1)
+      update(true)
+      update(false)
+      await vi.advanceTimersByTimeAsync(250)
+      expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
+    },
+  )
+
+  it.each(['debounce', 'retry'] as const)('cancels a scheduled %s when disabled', async (phase) => {
+    suggest.mockResolvedValue({ suggestion: null, reason: 'not-idle' })
+    update(true)
+    update(false)
+    if (phase === 'retry') await vi.advanceTimersByTimeAsync(250)
+    update(false, 'one', true, false)
+    update(false)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(suggest).toHaveBeenCalledTimes(phase === 'retry' ? 1 : 0)
+    expect(controller.getSnapshot().kind).toBe('idle')
+  })
+
+  it('keeps composition ineligible across a new turn until composition ends', async () => {
+    update(false)
+    controller.startComposition()
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(suggest).not.toHaveBeenCalled()
+    controller.endComposition()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(suggest).not.toHaveBeenCalled()
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(suggest).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides and refuses a shown suggestion immediately when disabled', async () => {
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(250)
+    update(false, 'one', true, false)
+    const insert = vi.fn(() => true)
+    expect(controller.getSnapshot().kind).toBe('idle')
+    expect(controller.accept(insert)).toBe(false)
+    expect(insert).not.toHaveBeenCalled()
+  })
+
   it('cancels typing and does not retry after the draft is erased', async () => {
     suggest.mockResolvedValue({ suggestion: null, reason: 'not-idle' })
     update(true)
@@ -88,6 +161,15 @@ describe('prediction lifecycle', () => {
     update(false)
     await vi.advanceTimersByTimeAsync(3_000)
     expect(suggest).toHaveBeenCalledTimes(3)
+    expect(controller.getSnapshot().kind).toBe('idle')
+  })
+
+  it('does not retry a suggestion from a superseded Host turn', async () => {
+    suggest.mockResolvedValue({ suggestion: null, reason: 'stale-turn' })
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(suggest).toHaveBeenCalledTimes(1)
     expect(controller.getSnapshot().kind).toBe('idle')
   })
 

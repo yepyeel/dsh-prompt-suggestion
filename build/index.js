@@ -200,16 +200,19 @@ ${transcript}` }] }],
   }
   return text;
 }
-function isAtRest(session) {
+function completedTurnSeq(session) {
   const end = session.seq;
   const floor = Math.max(0, end - 24);
   for (let seq = end - 1; seq >= floor; seq -= 1) {
     const event = session.eventAt(seq);
     if (!event) break;
-    if (event.type === "turn/start" || event.type === "user/message") return false;
-    if (event.type === "turn/end") return event.data?.reason?.kind === "completed";
+    if (event.type === "turn/start" || event.type === "user/message") return null;
+    if (event.type === "turn/end") return event.data?.reason?.kind === "completed" ? seq : null;
   }
-  return false;
+  return null;
+}
+function isAtRest(session) {
+  return completedTurnSeq(session) !== null;
 }
 
 // src/host/suggestion-service.ts
@@ -219,7 +222,8 @@ function createSuggestionService(ctx) {
       if (!settings.enabled) return { suggestion: null, reason: "disabled" };
       const session = ctx.sessions.get(sessionId);
       if (!session) return { suggestion: null, reason: "no-session" };
-      if (!isAtRest(session)) return { suggestion: null, reason: "not-idle" };
+      const turnSeq = completedTurnSeq(session);
+      if (turnSeq === null) return { suggestion: null, reason: "not-idle" };
       const messages = session.deriveMessages();
       if (!messages.some((message) => message.role === "user"))
         return { suggestion: null, reason: "empty-conversation" };
@@ -250,6 +254,9 @@ function createSuggestionService(ctx) {
           complete(ctx.llm, model, transcript, controller.signal, settings),
           cancelled
         ]);
+        if (controller.signal.aborted) return { suggestion: null, reason: "model-error" };
+        if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
+          return { suggestion: null, reason: "stale-turn" };
         return { suggestion: parseSuggestion(raw), model: `${model.provider}/${model.model}` };
       } catch {
         const reason = timedOut ? "timeout" : signal.aborted ? "cancelled" : "upstream-error";
@@ -317,8 +324,7 @@ function registerRoutes(ctx, config) {
             sendJson(res, 403, { suggestion: null, reason: "forbidden-origin" });
             return;
           }
-          const settings = resolveSettings(config);
-          if (!settings.enabled) {
+          if (!resolveSettings(config).enabled) {
             sendJson(res, 200, { suggestion: null, reason: "disabled" });
             return;
           }
@@ -339,10 +345,15 @@ function registerRoutes(ctx, config) {
           };
           res.on("close", onClose);
           try {
+            const result = await suggestions.suggest(
+              body.sessionId,
+              resolveSettings(config),
+              controller.signal
+            );
             sendJson(
               res,
               200,
-              await suggestions.suggest(body.sessionId, settings, controller.signal)
+              resolveSettings(config).enabled ? result : { suggestion: null, reason: "disabled" }
             );
           } finally {
             res.off("close", onClose);

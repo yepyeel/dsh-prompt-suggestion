@@ -69,8 +69,7 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
               sendJson(res, 403, { suggestion: null, reason: 'forbidden-origin' })
               return
             }
-            const settings = resolveSettings(config)
-            if (!settings.enabled) {
+            if (!resolveSettings(config).enabled) {
               sendJson(res, 200, { suggestion: null, reason: 'disabled' })
               return
             }
@@ -97,10 +96,15 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
             }
             res.on('close', onClose)
             try {
+              const result = await suggestions.suggest(
+                body.sessionId,
+                resolveSettings(config),
+                controller.signal,
+              )
               sendJson(
                 res,
                 200,
-                await suggestions.suggest(body.sessionId, settings, controller.signal),
+                resolveSettings(config).enabled ? result : { suggestion: null, reason: 'disabled' },
               )
             } finally {
               res.off('close', onClose)

@@ -5,6 +5,7 @@ export interface PredictionContext {
   sessionId?: string
   running: boolean
   blank: boolean
+  enabled: boolean
 }
 export type PredictionState =
   | { kind: 'idle' | 'requesting' | 'accepted' | 'dismissed' }
@@ -18,6 +19,7 @@ export class PredictionController {
   private generation = 0
   private requestId = 0
   private dismissed = false
+  private composing = false
   private timer?: ReturnType<typeof setTimeout>
   private active?: AbortController
   private state: PredictionState = { kind: 'idle' }
@@ -48,7 +50,12 @@ export class PredictionController {
 
   private eligible() {
     return Boolean(
-      this.context?.sessionId && !this.context.running && this.context.blank && !this.dismissed,
+      this.context?.sessionId &&
+        this.context.enabled &&
+        !this.context.running &&
+        this.context.blank &&
+        !this.composing &&
+        !this.dismissed,
     )
   }
 
@@ -59,9 +66,18 @@ export class PredictionController {
       this.cancel()
       this.generation += 1
       this.dismissed = false
+      this.composing = false
       this.publish({ kind: 'idle' })
       return
     }
+    if (previous.enabled !== context.enabled) {
+      this.cancel()
+      this.generation += 1
+      this.dismissed = false
+      this.publish({ kind: 'idle' })
+      return
+    }
+    if (!context.enabled) return
     if (context.running) {
       if (!previous.running) {
         this.cancel()
@@ -76,10 +92,17 @@ export class PredictionController {
       return
     }
     if (previous.running && this.eligible()) {
-      this.timer = setTimeout(() => {
-        void this.run(0)
-      }, DEBOUNCE_MS)
+      this.schedule(0, DEBOUNCE_MS)
     }
+  }
+
+  startComposition = () => {
+    this.composing = true
+    this.dismiss()
+  }
+
+  endComposition = () => {
+    this.composing = false
   }
 
   dismiss = () => {
@@ -103,6 +126,22 @@ export class PredictionController {
     return accepted
   }
 
+  private schedule(attempt: number, delay: number) {
+    const sessionId = this.context?.sessionId
+    const generation = this.generation
+    const id = ++this.requestId
+    this.timer = setTimeout(() => {
+      if (
+        this.requestId !== id ||
+        this.generation !== generation ||
+        this.context?.sessionId !== sessionId
+      )
+        return
+      this.timer = undefined
+      void this.run(attempt)
+    }, delay)
+  }
+
   private async run(attempt: number) {
     this.timer = undefined
     const sessionId = this.context?.sessionId
@@ -122,9 +161,7 @@ export class PredictionController {
       const response = await this.suggest(sessionId, controller.signal)
       if (!current()) return
       if (response.reason === 'not-idle' && attempt < MAX_IDLE_RETRIES) {
-        this.timer = setTimeout(() => {
-          void this.run(attempt + 1)
-        }, IDLE_RETRY_MS)
+        this.schedule(attempt + 1, IDLE_RETRY_MS)
         return
       }
       const text = response.suggestion?.trim()
@@ -139,6 +176,7 @@ export class PredictionController {
   dispose() {
     this.cancel()
     this.context = undefined
+    this.composing = false
     this.state = { kind: 'idle' }
     this.listeners.clear()
   }

@@ -1,6 +1,6 @@
 import type { Settings, SuggestResponse } from '../shared/contracts'
 import { HOST_REQUEST_TIMEOUT_MS } from '../shared/defaults'
-import { buildTranscript, complete, isAtRest, parseSuggestion, pickModel } from './domain'
+import { buildTranscript, complete, completedTurnSeq, parseSuggestion, pickModel } from './domain'
 import type { HostContext } from './dsh'
 
 export function createSuggestionService(
@@ -15,7 +15,8 @@ export function createSuggestionService(
       if (!settings.enabled) return { suggestion: null, reason: 'disabled' }
       const session = ctx.sessions.get(sessionId)
       if (!session) return { suggestion: null, reason: 'no-session' }
-      if (!isAtRest(session)) return { suggestion: null, reason: 'not-idle' }
+      const turnSeq = completedTurnSeq(session)
+      if (turnSeq === null) return { suggestion: null, reason: 'not-idle' }
       const messages = session.deriveMessages()
       if (!messages.some((message) => message.role === 'user'))
         return { suggestion: null, reason: 'empty-conversation' }
@@ -46,6 +47,9 @@ export function createSuggestionService(
           complete(ctx.llm, model, transcript, controller.signal, settings),
           cancelled,
         ])
+        if (controller.signal.aborted) return { suggestion: null, reason: 'model-error' }
+        if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
+          return { suggestion: null, reason: 'stale-turn' }
         return { suggestion: parseSuggestion(raw), model: `${model.provider}/${model.model}` }
       } catch {
         const reason = timedOut ? 'timeout' : signal.aborted ? 'cancelled' : 'upstream-error'

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveSettings } from '../../src/host/config'
+import type { SessionEvent } from '../../src/host/dsh'
 import { createModelCatalog } from '../../src/host/model-catalog'
 import { createSuggestionService } from '../../src/host/suggestion-service'
-import { hostFixture } from '../helpers/host'
+import { hostFixture, sampleSession } from '../helpers/host'
 
 afterEach(() => vi.useRealTimers())
 
@@ -42,6 +43,68 @@ describe('model catalog lifecycle', () => {
 })
 
 describe('completion lifecycle', () => {
+  it.each([
+    'new-message',
+    'running',
+    'next-completed-turn',
+    'next-aborted-turn',
+    'session-replaced',
+    'session-removed',
+  ])('discards model output after %s while the provider is pending', async (change) => {
+    vi.useFakeTimers()
+    const { ctx, sessions } = hostFixture()
+    const events: SessionEvent[] = [{ type: 'turn/end', data: { reason: { kind: 'completed' } } }]
+    const session = sampleSession({ eventAt: (seq) => events[seq] })
+    sessions.set('ready', session)
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    ctx.llm.stream = async function* () {
+      await pending
+      yield { type: 'text-delta', text: 'stale suggestion' }
+    }
+    const result = createSuggestionService(ctx).suggest(
+      'ready',
+      resolveSettings({}),
+      new AbortController().signal,
+    )
+    if (change === 'session-replaced') sessions.set('ready', sampleSession())
+    else if (change === 'session-removed') sessions.delete('ready')
+    else {
+      events.push({ type: change === 'new-message' ? 'user/message' : 'turn/start' })
+      if (change === 'next-completed-turn' || change === 'next-aborted-turn') {
+        events.push({
+          type: 'turn/end',
+          data: { reason: { kind: change === 'next-completed-turn' ? 'completed' : 'aborted' } },
+        })
+      }
+      session.seq = events.length
+    }
+    finish()
+    expect(await result).toEqual({ suggestion: null, reason: 'stale-turn' })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('allows bookkeeping appended after the same completed turn', async () => {
+    const { ctx, sessions } = hostFixture()
+    const events: SessionEvent[] = [{ type: 'turn/end', data: { reason: { kind: 'completed' } } }]
+    const session = sampleSession({ eventAt: (seq) => events[seq] })
+    sessions.set('ready', session)
+    ctx.llm.stream = async function* () {
+      events.push({ type: 'usage' })
+      session.seq = events.length
+      yield { type: 'text-delta', text: 'next step' }
+    }
+    expect(
+      await createSuggestionService(ctx).suggest(
+        'ready',
+        resolveSettings({}),
+        new AbortController().signal,
+      ),
+    ).toEqual({ suggestion: 'next step', model: 'fixture/test-model' })
+  })
+
   it('does not invoke the provider for an already cancelled request', async () => {
     const { ctx } = hostFixture()
     const stream = vi.spyOn(ctx.llm, 'stream')

@@ -1,13 +1,22 @@
 import * as React from 'react'
-import { useCallback, useRef } from 'react'
-import type { GhostProps } from '../dsh/contracts'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
+import type { GhostProps, SettingsForm } from '../dsh/contracts'
 import { GHOST_CSS } from '../styles/ghost'
 import { useComposer } from './use-composer'
 import { usePrediction } from './use-prediction'
 
-export function PromptGhost(props: GhostProps) {
+export function ConfiguredPromptGhost({ form, ...props }: GhostProps & { form: SettingsForm }) {
+  const snapshot = useSyncExternalStore(
+    (listener) => form.subscribe(listener),
+    () => form.getSnapshot(),
+  )
+  const enabled = snapshot.status === 'ready' && snapshot.value?.enabled !== false
+  return <PromptGhost {...props} enabled={enabled} />
+}
+
+export function PromptGhost(props: GhostProps & { enabled?: boolean }) {
   const root = useRef<HTMLDivElement>(null)
-  const { state, controller } = usePrediction(props)
+  const { state, controller } = usePrediction(props, props.enabled)
   const accept = useCallback(() => {
     controller.accept((text) => {
       const span = props.inputActions.captureInsertion()

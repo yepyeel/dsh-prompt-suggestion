@@ -30,6 +30,7 @@ export const SUGGEST_REASONS = [
   'missing-session',
   'no-session',
   'not-idle',
+  'stale-turn',
   'empty-conversation',
   'empty-transcript',
   'no-model',

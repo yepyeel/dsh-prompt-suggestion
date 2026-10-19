@@ -127,6 +127,7 @@ pnpm build
 - **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`；`GET /prompt-suggestion/models` 汇总可用模型。
 - **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `build/client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
 - **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
+- **过期结果保护**：请求和回包都核对会话与回合；开始输入、中文输入法组合、切换会话或关闭功能时立即作废旧预测。
 - **失败降级**：超时、限流、解析失败一律静默返回空，不影响正常输入。
 
 ## 项目结构
