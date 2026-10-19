@@ -432,6 +432,78 @@ var init_locales = __esm({
   }
 });
 
+// client/nav-icon.js
+function createSparkle(className) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("xmlns", SVG_NS);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("stroke-width", "1.3");
+  if (className) svg.setAttribute("class", className);
+  svg.dataset.psNavIcon = PATCHED;
+  for (const d of SPARKLE_PATHS) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    path.setAttribute("stroke", "currentColor");
+    svg.append(path);
+  }
+  return svg;
+}
+function syncSettingsNavIcon(labels) {
+  if (typeof document === "undefined") return false;
+  const list = document.querySelector(NAV_LIST);
+  if (!list) return false;
+  const wanted = new Set(labels);
+  let patched = false;
+  for (const button of list.querySelectorAll("button")) {
+    const label = button.querySelector(NAV_LABEL)?.textContent?.trim();
+    if (!label || !wanted.has(label)) continue;
+    const icon = button.querySelector(`svg${NAV_ICON}`);
+    if (!icon || icon.dataset.psNavIcon === PATCHED) continue;
+    icon.replaceWith(createSparkle(icon.getAttribute("class")));
+    patched = true;
+  }
+  return patched;
+}
+function installSettingsNavIcon(getLabels) {
+  if (typeof document === "undefined" || !document.body) return () => {
+  };
+  let frame = 0;
+  const run = () => {
+    frame = 0;
+    syncSettingsNavIcon(getLabels());
+  };
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(run);
+  };
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.body, { childList: true, subtree: true });
+  schedule();
+  return () => {
+    observer.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+  };
+}
+var SVG_NS, NAV_LIST, NAV_LABEL, NAV_ICON, PATCHED, SPARKLE_PATHS;
+var init_nav_icon = __esm({
+  "client/nav-icon.js"() {
+    SVG_NS = "http://www.w3.org/2000/svg";
+    NAV_LIST = '[class*="_navList"]';
+    NAV_LABEL = '[class*="_navLabel"]';
+    NAV_ICON = '[class*="_navIcon"]';
+    PATCHED = "sparkle";
+    SPARKLE_PATHS = [
+      "M5.875 3C5.875 6.33333 7.54167 8 10.875 8C7.54167 8 5.875 9.66667 5.875 13C5.875 9.66667 4.20833 8 0.875 8C4.20833 8 5.875 6.33333 5.875 3Z",
+      "M12.375 1.55823C12.375 3.39156 13.2917 4.30823 15.125 4.30823C13.2917 4.30823 12.375 5.22489 12.375 7.05823C12.375 5.22489 11.4583 4.30823 9.625 4.30823C11.4583 4.30823 12.375 3.39156 12.375 1.55823Z",
+      "M12.375 10.4418C12.375 11.7751 13.0417 12.4418 14.375 12.4418C13.0417 12.4418 12.375 13.1084 12.375 14.4418C12.375 13.1084 11.7083 12.4418 10.375 12.4418C11.7083 12.4418 12.375 11.7751 12.375 10.4418Z"
+    ];
+  }
+});
+
 // client/components/dropdown-select.js
 function DropdownSelect({ value, options, disabled, onChange }) {
   const [open, setOpen] = (0, import_react2.useState)(false);
@@ -1196,6 +1268,10 @@ __export(index_exports, {
 function apply(ctx) {
   const t = ctx.locale.bind(LOCALE_NS);
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), "prompt-suggestion: dictionaries");
+  ctx.effect(
+    () => installSettingsNavIcon(() => [zh.title, en.title]),
+    "prompt-suggestion: settings nav icon"
+  );
   const form = ctx.configForms.get(SETTINGS_NS);
   const SettingsEntry = (props) => (0, import_react4.createElement)(SettingsPage, { ...props, form, t });
   ctx.slots.inject("conversation.input.overlay", () => ctx.slots.register({
@@ -1217,6 +1293,7 @@ var init_index = __esm({
     init_constants();
     init_ghost2();
     init_locales();
+    init_nav_icon();
     init_settings2();
     inject = ["slots", "locale", "configForms"];
   }
