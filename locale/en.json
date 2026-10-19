@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Prompt Suggestion",
+    "description": "Predicts your next message and shows it as gray ghost text in the composer. Tab or → to use it."
+  }
+}
