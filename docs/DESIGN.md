@@ -1,8 +1,10 @@
 # 输入预测插件：当前架构
 
+[项目首页](../README.md) · [贡献指南](./CONTRIBUTING.md)
+
 ## 运行与分发边界
 
-DSH 加载根目录 `index.js`（Host ESM）和 `client.js`（Client classic bundle）。两者均由 `scripts/build.mjs` 从 `src/` 构建并提交，供 GitHub 安装直接使用。`package.json` 的 exports、files、bundle patch 与 Client 声明保持这些入口。
+DSH 通过 `package.json` 的 `exports["."]` 加载 `build/index.js`（Host ESM），通过 `exports["./client"]` 加载 `build/client.js`（Client classic bundle），不要求产物位于仓库根目录。两者均由 `scripts/build.mjs` 从 `src/` 构建并提交，`files` 包含 `build/`，供 GitHub 安装直接使用。bundle patch 与 Client 声明保持不变，不依赖安装时执行 prepare 或下载开发工具。
 
 Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` 留作外部模块，由 DSH 提供；不打包第二份 React，也不导入 Harness 内部 Client 包。TypeScript、React 测试依赖、Vitest、jsdom 和 Biome 均为开发依赖。
 
@@ -67,7 +69,7 @@ DSH 0.2.x 没有公开设置导航图标入口，`dsh/nav-icon.ts` 隔离相应�
 
 ## 验证与开发
 
-`pnpm check` 包含严格类型检查、Biome、Vitest、内存构建比对与安装包验证；CI 在 Node.js 22 / 24 上冻结安装后执行同一命令。
+`pnpm check` 包含严格类型检查、Biome、Vitest、内存构建比对与安装包验证，在本地执行。为节省运行额度，仓库已关闭 GitHub Actions CI。
 
 - 规则测试：预算、解析、回合边界、模型选择、volatile 读取、流结束原因。
 - Host 测试：真实本地 HTTP server 搭配受控 Session / LLM，验证成功、错误、Origin、热更新、断开取消、SDK 异常出口。

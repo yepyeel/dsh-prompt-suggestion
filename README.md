@@ -18,7 +18,7 @@
 
 ## 安装
 
-插件是标准 DSH bundle（`dsh.bundle.patch` + `dsh.client`），已经在仓库里带了构建好的 `client.js`，不需要先发布到 npm，直接在 DSH 里从 GitHub 地址安装即可。
+插件是标准 DSH bundle（`dsh.bundle.patch` + `dsh.client`），仓库的 `build/` 已包含构建好的 Host 和 Client，不需要先发布到 npm，直接在 DSH 里从 GitHub 地址安装即可。用户无需安装 TypeScript、手动构建或批准本插件的构建脚本。
 
 ### 从侧边栏安装（推荐）
 
@@ -125,7 +125,7 @@ pnpm build
 ## 实现概览
 
 - **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`；`GET /prompt-suggestion/models` 汇总可用模型。
-- **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
+- **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `build/client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
 - **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
 - **失败降级**：超时、限流、解析失败一律静默返回空，不影响正常输入。
 
@@ -144,13 +144,31 @@ src/
     └── index.ts               # slots / locale / configForms 注册
 scripts/                       # 双端构建、安装包验证
 tests/                        # 规则、HTTP、异步状态与 DOM 交互测试
-index.js                       # 生成的 Host ESM bundle
-client.js                      # 生成的 Client classic bundle
+docs/                          # 设计与贡献文档
+├── DESIGN.md                  # 架构、生命周期和兼容约束
+└── CONTRIBUTING.md            # 开发流程与 PR 规范
+build/                         # 已构建并提交，供 DSH 安装后直接加载
+├── index.js                   # Host ESM bundle
+└── client.js                  # Client classic bundle
 ```
 
-`index.js` 和 `client.js` 都由 `src/` 构建生成并提交到 Git。DSH 和从 GitHub 安装的用户直接加载这两个文件，不需要 TypeScript 或开发工具。运行时依赖仍只有 `@deepseek-ai/schemastery`；React 由 DSH 提供。
+`build/index.js` 和 `build/client.js` 都由 `src/` 构建生成并提交到 Git。DSH 安装的是仓库对应的包，再按 `package.json` 的 `exports` 加载入口，不会固定查找根目录的 JS 文件：
 
-当前架构、生命周期和兼容约束见 [DESIGN.md](./DESIGN.md)。
+```json
+{
+  "exports": {
+    ".": "./build/index.js",
+    "./client": "./build/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["build/", "cordis.patch.yml", "locale/*.json", "icon.svg"]
+}
+```
+
+`build/` 不能加入 `.gitignore`，否则从 GitHub 安装时拿不到预构建文件。无需 `prepare` / `postinstall` 构建，也无需用户安装开发工具。运行时依赖仍只有 `@deepseek-ai/schemastery`；React 由 DSH 提供。
+
+项目首页保留在根目录 `README.md`，其他项目文档集中在 `docs/`。当前架构、生命周期和兼容约束见 [DESIGN.md](./docs/DESIGN.md)。
 
 ## 已知限制
 
@@ -179,14 +197,14 @@ pnpm check
 | `pnpm test:package` | 打包、只安装运行时依赖，验证 Host 导出及 Client 加载协议 |
 | `pnpm check` | 顺序运行类型、静态检查、测试、产物一致性及安装包验证 |
 
-源码在 `src/`；不要直接编辑根目录的生成文件。改动后运行 `pnpm build` 并提交两端产物。GitHub Actions 在 Node.js 22 / 24 上执行冻结安装与 `pnpm check`。
+源码在 `src/`；不要直接编辑 `build/` 的生成文件。改动后运行 `pnpm build` 并提交两端产物。为节省 GitHub Actions 额度，仓库已关闭自动 CI；提交前请在本地执行 `pnpm check`，核对源码与仓库中的预构建文件一致，并完成类型、静态检查、测试和安装包验证。
 
 - Host 改动：构建后重启 DSH，或在插件列表停用再启用。
 - Client 改动：构建后重新启用插件；必要时刷新页面。`pnpm dev` 负责重建，宿主重载仍由 DSH 管理。
 - 单元和 DOM 测试使用受控的模型与宿主接口，不需要 API key；`test:package` 需要 npm registry 访问以安装运行时依赖。
 - 真实模型预测、宿主界面的明暗主题和视觉对齐仍需在 DSH 中人工验收；DOM 测试不能替代这些检查。
 
-贡献流程与 PR 规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+贡献流程与 PR 规范见 [CONTRIBUTING.md](./docs/CONTRIBUTING.md)。
 
 ## License
 

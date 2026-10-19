@@ -20,8 +20,8 @@ try {
   )
   const files = new Set(packed.files.map((file) => file.path))
   for (const file of [
-    'index.js',
-    'client.js',
+    'build/index.js',
+    'build/client.js',
     'package.json',
     'cordis.patch.yml',
     'locale/en.json',
@@ -32,6 +32,10 @@ try {
   assert(
     ![...files].some((file) => /^(src|tests|node_modules|scripts)\//.test(file)),
     'Development files leaked into the runtime package',
+  )
+  assert(
+    !files.has('index.js') && !files.has('client.js'),
+    'Legacy root bundles leaked into the package',
   )
   const sandbox = path.join(temporary, 'installed')
   run('npm', [
@@ -64,9 +68,16 @@ try {
   )
 
   const packageRoot = path.join(sandbox, 'node_modules/@local/dsh-prompt-suggestion')
+  const installedRequire = createRequire(path.join(sandbox, 'package.json'))
+  assert.equal(
+    installedRequire.resolve('@local/dsh-prompt-suggestion'),
+    path.join(packageRoot, 'build/index.js'),
+  )
+  const clientPath = installedRequire.resolve('@local/dsh-prompt-suggestion/client')
+  assert.equal(clientPath, path.join(packageRoot, 'build/client.js'))
   const registrations = []
   vm.runInNewContext(
-    await readFile(path.join(packageRoot, 'client.js'), 'utf8'),
+    await readFile(clientPath, 'utf8'),
     {
       window: { __ModuleLoader__: { load: (entry) => registrations.push(entry) } },
     },

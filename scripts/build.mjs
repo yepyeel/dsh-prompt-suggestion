@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, context } from 'esbuild'
@@ -17,7 +17,7 @@ function options(client) {
   return {
     absWorkingDir: root,
     entryPoints: [client ? 'src/client/entry.cjs' : 'src/host/index.ts'],
-    outfile: client ? 'client.js' : 'index.js',
+    outfile: client ? 'build/client.js' : 'build/index.js',
     bundle: true,
     format: client ? 'cjs' : 'esm',
     platform: client ? 'browser' : 'node',
@@ -52,6 +52,7 @@ if (watch) {
   for (const client of [false, true]) {
     const result = await build(options(client))
     const output = result.outputFiles[0]
+    const outputName = path.relative(root, output.path)
     if (check) {
       let existing
       try {
@@ -60,14 +61,11 @@ if (watch) {
         /* Missing output is stale too. */
       }
       if (!existing?.equals(output.contents))
-        throw new Error(
-          `${path.basename(output.path)} is stale. Run pnpm build and commit both generated bundles.`,
-        )
+        throw new Error(`${outputName} is stale. Run pnpm build and commit both generated bundles.`)
     } else {
+      await mkdir(path.dirname(output.path), { recursive: true })
       await writeFile(output.path, output.contents)
     }
-    console.log(
-      `${path.basename(output.path)}: ${check ? 'verified' : `${output.contents.length} bytes`}`,
-    )
+    console.log(`${outputName}: ${check ? 'verified' : `${output.contents.length} bytes`}`)
   }
 }
