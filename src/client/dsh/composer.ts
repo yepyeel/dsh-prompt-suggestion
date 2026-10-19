@@ -82,9 +82,20 @@ export function listenComposerKeys(root: HTMLElement, accept: () => void, dismis
   return () => window.removeEventListener('keydown', onKeyDown, true)
 }
 
-export function listenComposition(root: HTMLElement, dismiss: () => void) {
+export function listenComposerInput(
+  root: HTMLElement,
+  activity: { dismiss: () => void; startComposition: () => void; endComposition: () => void },
+) {
   const card = findComposer(root)
-  // Listen while requests are pending too, before the draft snapshot updates.
-  card?.addEventListener('compositionstart', dismiss, true)
-  return () => card?.removeEventListener('compositionstart', dismiss, true)
+  // Invalidate pending requests before the input snapshot catches up, including IME.
+  card?.addEventListener('compositionstart', activity.startComposition, true)
+  card?.addEventListener('compositionend', activity.endComposition, true)
+  card?.addEventListener('beforeinput', activity.dismiss, true)
+  card?.addEventListener('input', activity.dismiss, true)
+  return () => {
+    card?.removeEventListener('compositionstart', activity.startComposition, true)
+    card?.removeEventListener('compositionend', activity.endComposition, true)
+    card?.removeEventListener('beforeinput', activity.dismiss, true)
+    card?.removeEventListener('input', activity.dismiss, true)
+  }
 }

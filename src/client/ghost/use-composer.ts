@@ -4,8 +4,8 @@ import type { GhostBox } from '../dsh/composer'
 import {
   concealPlaceholder,
   findComposer,
+  listenComposerInput,
   listenComposerKeys,
-  listenComposition,
   measureComposer,
 } from '../dsh/composer'
 import type { PredictionController } from './controller'
@@ -20,7 +20,7 @@ export function useComposer(
   const [box, setBox] = useState<GhostBox | null>(null)
   useLayoutEffect(() => {
     if (!root.current || !sessionId) return
-    return listenComposition(root.current, controller.dismiss)
+    return listenComposerInput(root.current, controller)
   }, [root, sessionId, controller])
 
   useLayoutEffect(() => {

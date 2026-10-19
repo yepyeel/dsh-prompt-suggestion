@@ -55,6 +55,29 @@ describe('Host HTTP boundary', () => {
     })
   })
 
+  it('rechecks volatile enablement before returning an in-flight suggestion', async () => {
+    let enabled = true
+    fixture.config.enabled = { get: () => enabled }
+    let finish!: () => void
+    let started!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const streaming = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    fixture.ctx.llm.stream = async function* () {
+      started()
+      await pending
+      yield { type: 'text-delta', text: 'stale suggestion' }
+    }
+    const response = post({ sessionId: 'ready' })
+    await streaming
+    enabled = false
+    finish()
+    expect(await (await response).json()).toEqual({ suggestion: null, reason: 'disabled' })
+  })
+
   it('skips missing, running, empty, and model-less sessions', async () => {
     fixture.sessions.set('running', sampleSession({ eventAt: () => ({ type: 'turn/start' }) }))
     fixture.sessions.set('empty', sampleSession({ deriveMessages: () => [] }))

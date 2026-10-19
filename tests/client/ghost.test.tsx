@@ -4,14 +4,18 @@ import * as React from 'react'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../src/client/api'
-import type { GhostProps } from '../../src/client/dsh/contracts'
-import { PromptGhost } from '../../src/client/ghost/prompt-ghost'
+import type { ClientContext, GhostProps, SettingsSnapshot } from '../../src/client/dsh/contracts'
+import { apply } from '../../src/client/index'
 import type { SuggestResponse } from '../../src/shared/contracts'
 
 describe('composer integration', () => {
   let running: boolean
   let draft: string
   let sessionId: string
+  let attachmentIds: unknown[]
+  let settings: SettingsSnapshot
+  let settingsListeners: Set<() => void>
+  let Ghost: React.ComponentType<GhostProps>
   const actions = {
     captureInsertion: vi.fn(() => ({ revision: 7 })),
     insertText: vi.fn(() => true),
@@ -20,7 +24,7 @@ describe('composer integration', () => {
   const props = (): GhostProps => ({
     sessionId,
     inputActions: actions,
-    useInput: (selector) => selector({ draft, attachmentIds: [] }),
+    useInput: (selector) => selector({ draft, attachmentIds }),
     useSession: (selector) => selector({ running }),
   })
   function Composer() {
@@ -42,7 +46,7 @@ describe('composer integration', () => {
           role="textbox"
           aria-label="Composer"
         />
-        <PromptGhost {...props()} />
+        <Ghost {...props()} />
       </div>
     )
   }
@@ -51,6 +55,33 @@ describe('composer integration', () => {
     running = true
     draft = ''
     sessionId = 'one'
+    attachmentIds = []
+    settings = { status: 'ready', value: { enabled: true } }
+    settingsListeners = new Set()
+    const components = new Map<string, unknown>()
+    const ctx: ClientContext = {
+      locale: { bind: () => (key) => key, register: () => {} },
+      configForms: {
+        get: () => ({
+          getSnapshot: () => settings,
+          subscribe: (listener) => {
+            settingsListeners.add(listener)
+            return () => {
+              settingsListeners.delete(listener)
+            }
+          },
+          set: async () => true,
+          unset: async () => true,
+        }),
+      },
+      slots: {
+        inject: (_slot, register) => register(),
+        register: (entry, component) => components.set(entry.id, component),
+      },
+      effect: () => {},
+    }
+    apply(ctx)
+    Ghost = components.get('prompt-ghost') as React.ComponentType<GhostProps>
     vi.spyOn(api, 'suggest').mockResolvedValue({ suggestion: '继续测试', model: 'fixture/model' })
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: HTMLElement,
@@ -73,8 +104,16 @@ describe('composer integration', () => {
     cleanup()
     await vi.advanceTimersByTimeAsync(0)
     expect(vi.getTimerCount()).toBe(0)
+    expect(settingsListeners.size).toBe(0)
     vi.useRealTimers()
   })
+
+  function setEnabled(enabled: boolean) {
+    act(() => {
+      settings = { status: 'ready', value: { enabled } }
+      for (const listener of settingsListeners) listener()
+    })
+  }
 
   async function show() {
     const view = render(
@@ -129,9 +168,33 @@ describe('composer integration', () => {
     ).toBe('visible')
   })
 
-  it('cancels on IME composition before an in-flight request returns', async () => {
+  it.each(['compositionstart', 'beforeinput', 'input'])(
+    'cancels on %s before an in-flight request returns or the draft updates',
+    async (event) => {
+      let resolve!: (response: SuggestResponse) => void
+      vi.mocked(api.suggest).mockReturnValue(
+        new Promise((done) => {
+          resolve = done
+        }),
+      )
+      const view = render(<Composer />)
+      running = false
+      view.rerender(<Composer />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250)
+      })
+      fireEvent(view.getByRole('textbox'), new Event(event, { bubbles: true }))
+      await act(async () => {
+        resolve({ suggestion: 'stale', model: 'fixture/model' })
+      })
+      expect(vi.mocked(api.suggest).mock.calls[0][1].aborted).toBe(true)
+      expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+    },
+  )
+
+  it('subscribes to enablement, cancels pending work, and does not revive it when re-enabled', async () => {
     let resolve!: (response: SuggestResponse) => void
-    vi.mocked(api.suggest).mockReturnValue(
+    vi.mocked(api.suggest).mockReturnValueOnce(
       new Promise((done) => {
         resolve = done
       }),
@@ -142,7 +205,55 @@ describe('composer integration', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(250)
     })
-    fireEvent.compositionStart(view.getByRole('textbox'))
+    setEnabled(false)
+    expect(vi.mocked(api.suggest).mock.calls[0][1].aborted).toBe(true)
+    setEnabled(true)
+    await act(async () => {
+      resolve({ suggestion: 'stale', model: 'fixture/model' })
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+    expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+    expect(api.suggest).toHaveBeenCalledTimes(1)
+    running = true
+    view.rerender(<Composer />)
+    running = false
+    view.rerender(<Composer />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250)
+    })
+    expect(view.container.querySelector('.dsh-ps-text')?.textContent).toBe('继续测试')
+  })
+
+  it('hides a shown suggestion and restores the placeholder when disabled', async () => {
+    const view = await show()
+    setEnabled(false)
+    expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+    expect(
+      view.container.querySelector<HTMLElement>('[data-composer-placeholder]')?.style.visibility,
+    ).toBe('visible')
+    const editor = view.getByRole('textbox')
+    editor.focus()
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(true)
+    expect(actions.insertText).not.toHaveBeenCalled()
+  })
+
+  it('cancels pending suggestions when an attachment is added, even if later removed', async () => {
+    let resolve!: (response: SuggestResponse) => void
+    vi.mocked(api.suggest).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    const view = render(<Composer />)
+    running = false
+    view.rerender(<Composer />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250)
+    })
+    attachmentIds = ['attachment']
+    view.rerender(<Composer />)
+    attachmentIds = []
+    view.rerender(<Composer />)
     await act(async () => {
       resolve({ suggestion: 'stale', model: 'fixture/model' })
     })

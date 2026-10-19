@@ -256,10 +256,18 @@ function listenComposerKeys(root, accept, dismiss) {
   window.addEventListener("keydown", onKeyDown, true);
   return () => window.removeEventListener("keydown", onKeyDown, true);
 }
-function listenComposition(root, dismiss) {
+function listenComposerInput(root, activity) {
   const card = findComposer(root);
-  card?.addEventListener("compositionstart", dismiss, true);
-  return () => card?.removeEventListener("compositionstart", dismiss, true);
+  card?.addEventListener("compositionstart", activity.startComposition, true);
+  card?.addEventListener("compositionend", activity.endComposition, true);
+  card?.addEventListener("beforeinput", activity.dismiss, true);
+  card?.addEventListener("input", activity.dismiss, true);
+  return () => {
+    card?.removeEventListener("compositionstart", activity.startComposition, true);
+    card?.removeEventListener("compositionend", activity.endComposition, true);
+    card?.removeEventListener("beforeinput", activity.dismiss, true);
+    card?.removeEventListener("input", activity.dismiss, true);
+  };
 }
 var PLACEHOLDER_SELECTOR, EDITOR_SELECTOR;
 var init_composer = __esm({
@@ -275,7 +283,7 @@ function useComposer(root, shown, sessionId, controller, accept) {
   const [box, setBox] = (0, import_react.useState)(null);
   (0, import_react.useLayoutEffect)(() => {
     if (!root.current || !sessionId) return;
-    return listenComposition(root.current, controller.dismiss);
+    return listenComposerInput(root.current, controller);
   }, [root, sessionId, controller]);
   (0, import_react.useLayoutEffect)(() => {
     const node = root.current;
@@ -331,6 +339,7 @@ var init_contracts = __esm({
       "missing-session",
       "no-session",
       "not-idle",
+      "stale-turn",
       "empty-conversation",
       "empty-transcript",
       "no-model",
@@ -419,6 +428,7 @@ var init_controller = __esm({
         __publicField(this, "generation", 0);
         __publicField(this, "requestId", 0);
         __publicField(this, "dismissed", false);
+        __publicField(this, "composing", false);
         __publicField(this, "timer");
         __publicField(this, "active");
         __publicField(this, "state", { kind: "idle" });
@@ -429,6 +439,13 @@ var init_controller = __esm({
           return () => {
             this.listeners.delete(listener);
           };
+        });
+        __publicField(this, "startComposition", () => {
+          this.composing = true;
+          this.dismiss();
+        });
+        __publicField(this, "endComposition", () => {
+          this.composing = false;
         });
         __publicField(this, "dismiss", () => {
           this.dismissed = true;
@@ -449,7 +466,7 @@ var init_controller = __esm({
       }
       eligible() {
         return Boolean(
-          this.context?.sessionId && !this.context.running && this.context.blank && !this.dismissed
+          this.context?.sessionId && this.context.enabled && !this.context.running && this.context.blank && !this.composing && !this.dismissed
         );
       }
       update(context) {
@@ -459,9 +476,18 @@ var init_controller = __esm({
           this.cancel();
           this.generation += 1;
           this.dismissed = false;
+          this.composing = false;
           this.publish({ kind: "idle" });
           return;
         }
+        if (previous.enabled !== context.enabled) {
+          this.cancel();
+          this.generation += 1;
+          this.dismissed = false;
+          this.publish({ kind: "idle" });
+          return;
+        }
+        if (!context.enabled) return;
         if (context.running) {
           if (!previous.running) {
             this.cancel();
@@ -476,9 +502,7 @@ var init_controller = __esm({
           return;
         }
         if (previous.running && this.eligible()) {
-          this.timer = setTimeout(() => {
-            void this.run(0);
-          }, DEBOUNCE_MS);
+          this.schedule(0, DEBOUNCE_MS);
         }
       }
       accept(insert) {
@@ -494,6 +518,17 @@ var init_controller = __esm({
         this.publish({ kind: accepted ? "accepted" : "dismissed" });
         return accepted;
       }
+      schedule(attempt, delay) {
+        const sessionId = this.context?.sessionId;
+        const generation = this.generation;
+        const id = ++this.requestId;
+        this.timer = setTimeout(() => {
+          if (this.requestId !== id || this.generation !== generation || this.context?.sessionId !== sessionId)
+            return;
+          this.timer = void 0;
+          void this.run(attempt);
+        }, delay);
+      }
       async run(attempt) {
         this.timer = void 0;
         const sessionId = this.context?.sessionId;
@@ -508,9 +543,7 @@ var init_controller = __esm({
           const response = await this.suggest(sessionId, controller.signal);
           if (!current()) return;
           if (response.reason === "not-idle" && attempt < MAX_IDLE_RETRIES) {
-            this.timer = setTimeout(() => {
-              void this.run(attempt + 1);
-            }, IDLE_RETRY_MS);
+            this.schedule(attempt + 1, IDLE_RETRY_MS);
             return;
           }
           const text = response.suggestion?.trim();
@@ -524,6 +557,7 @@ var init_controller = __esm({
       dispose() {
         this.cancel();
         this.context = void 0;
+        this.composing = false;
         this.state = { kind: "idle" };
         this.listeners.clear();
       }
@@ -532,15 +566,15 @@ var init_controller = __esm({
 });
 
 // src/client/ghost/use-prediction.ts
-function usePrediction({ useInput, useSession, sessionId }) {
+function usePrediction({ useInput, useSession, sessionId }, enabled = true) {
   const input = useInput((snapshot) => snapshot);
   const running = useSession((snapshot) => snapshot?.running === true);
   const blank = Boolean(input) && !input?.draft?.trim() && !input?.attachmentIds?.length;
   const [controller] = (0, import_react2.useState)(() => new PredictionController(api.suggest));
   const state = (0, import_react2.useSyncExternalStore)(controller.subscribe, controller.getSnapshot);
   (0, import_react2.useLayoutEffect)(() => {
-    controller.update({ sessionId, running, blank });
-  }, [controller, sessionId, running, blank]);
+    controller.update({ sessionId, running, blank, enabled });
+  }, [controller, sessionId, running, blank, enabled]);
   (0, import_react2.useLayoutEffect)(() => () => controller.dispose(), [controller]);
   return { state, controller };
 }
@@ -555,9 +589,17 @@ var init_use_prediction = __esm({
 });
 
 // src/client/ghost/prompt-ghost.tsx
+function ConfiguredPromptGhost({ form, ...props }) {
+  const snapshot = (0, import_react3.useSyncExternalStore)(
+    (listener) => form.subscribe(listener),
+    () => form.getSnapshot()
+  );
+  const enabled = snapshot.status === "ready" && snapshot.value?.enabled !== false;
+  return /* @__PURE__ */ React.createElement(PromptGhost, { ...props, enabled });
+}
 function PromptGhost(props) {
   const root = (0, import_react3.useRef)(null);
-  const { state, controller } = usePrediction(props);
+  const { state, controller } = usePrediction(props, props.enabled);
   const accept = (0, import_react3.useCallback)(() => {
     controller.accept((text) => {
       const span = props.inputActions.captureInsertion();
@@ -1466,11 +1508,12 @@ function apply(ctx) {
   );
   const form = ctx.configForms.get(SETTINGS_NS);
   const SettingsEntry = () => (0, import_react6.createElement)(SettingsPage, { form, t });
+  const GhostEntry = (props) => (0, import_react6.createElement)(ConfiguredPromptGhost, { ...props, form });
   ctx.slots.inject(
     "conversation.input.overlay",
     () => ctx.slots.register(
       { name: "conversation.input.overlay", id: "prompt-ghost", order: 4 },
-      PromptGhost
+      GhostEntry
     )
   );
   ctx.slots.inject(
