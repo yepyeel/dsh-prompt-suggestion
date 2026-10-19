@@ -144,6 +144,9 @@ src/
     └── index.ts               # slots / locale / configForms 注册
 scripts/                       # 双端构建、安装包验证
 tests/                        # 规则、HTTP、异步状态与 DOM 交互测试
+docs/                          # 设计与贡献文档
+├── DESIGN.md                  # 架构、生命周期和兼容约束
+└── CONTRIBUTING.md            # 开发流程与 PR 规范
 build/                         # 已构建并提交，供 DSH 安装后直接加载
 ├── index.js                   # Host ESM bundle
 └── client.js                  # Client classic bundle
@@ -165,7 +168,7 @@ build/                         # 已构建并提交，供 DSH 安装后直接加
 
 `build/` 不能加入 `.gitignore`，否则从 GitHub 安装时拿不到预构建文件。无需 `prepare` / `postinstall` 构建，也无需用户安装开发工具。运行时依赖仍只有 `@deepseek-ai/schemastery`；React 由 DSH 提供。
 
-当前架构、生命周期和兼容约束见 [DESIGN.md](./DESIGN.md)。
+项目首页保留在根目录 `README.md`，其他项目文档集中在 `docs/`。当前架构、生命周期和兼容约束见 [DESIGN.md](./docs/DESIGN.md)。
 
 ## 已知限制
 
@@ -201,7 +204,7 @@ pnpm check
 - 单元和 DOM 测试使用受控的模型与宿主接口，不需要 API key；`test:package` 需要 npm registry 访问以安装运行时依赖。
 - 真实模型预测、宿主界面的明暗主题和视觉对齐仍需在 DSH 中人工验收；DOM 测试不能替代这些检查。
 
-贡献流程与 PR 规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+贡献流程与 PR 规范见 [CONTRIBUTING.md](./docs/CONTRIBUTING.md)。
 
 ## License
 

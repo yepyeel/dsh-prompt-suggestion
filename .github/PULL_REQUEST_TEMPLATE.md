@@ -28,5 +28,5 @@ Closes #
 - [ ] 没有引入 Harness 内部 Client 包
 - [ ] 新增设置字段是 volatile，并且在每次请求时现读
 - [ ] 文案同时补了 `zh` / `en`
-- [ ] 文档已同步（README / DESIGN）
+- [ ] 文档已同步（根目录 `README.md` / `docs/DESIGN.md`）
 - [ ] 已区分自动化测试与实际 DSH / 浏览器验收结果

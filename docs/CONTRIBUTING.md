@@ -1,5 +1,7 @@
 # Contributing
 
+使用方式见[项目首页](../README.md)，架构与兼容约束见[设计文档](./DESIGN.md)。
+
 ## 开始之前
 
 - 文档、样式微调可以直接提 PR。
@@ -57,6 +59,6 @@ DSH classic loader 的 apply/inject 形态、公开 exports、files 与 GitHub �
 - 分支使用 feat/、fix/、refactor/、chore/ 或 docs/。
 - 提交遵循 Conventional Commits，subject 不超过 72 字符。
 - 一个 PR 解决一个问题，说明行为、兼容范围与实际验证，关联已有 Issue。
-- 行为或结构变更同步更新 README / DESIGN。
+- 行为或结构变更同步更新根目录 README.md 和 docs/DESIGN.md；新增项目文档放在 docs/。
 - 不提交 node_modules、coverage、.scratch 或本地凭据。
 - 默认 squash merge；收到反馈后在原 PR 分支继续提交。

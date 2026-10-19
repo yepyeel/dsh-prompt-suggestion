@@ -1,5 +1,7 @@
 # 输入预测插件：当前架构
 
+[项目首页](../README.md) · [贡献指南](./CONTRIBUTING.md)
+
 ## 运行与分发边界
 
 DSH 通过 `package.json` 的 `exports["."]` 加载 `build/index.js`（Host ESM），通过 `exports["./client"]` 加载 `build/client.js`（Client classic bundle），不要求产物位于仓库根目录。两者均由 `scripts/build.mjs` 从 `src/` 构建并提交，`files` 包含 `build/`，供 GitHub 安装直接使用。bundle patch 与 Client 声明保持不变，不依赖安装时执行 prepare 或下载开发工具。
