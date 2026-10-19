@@ -24,6 +24,12 @@ export const zh = {
   readOnly: '当前部署的设置为只读。',
   unavailable: '该插件当前未加载，无法配置。',
   loading: '正在读取设置…',
+  sessionControls: '本会话的输入预测',
+  automaticOn: '自动预测：开',
+  automaticOff: '自动预测：关',
+  pauseAutomatic: '关闭本会话的自动预测',
+  resumeAutomatic: '开启本会话的自动预测',
+  generateSuggestion: '生成建议',
 }
 
 export const en = {
@@ -54,6 +60,12 @@ export const en = {
   readOnly: 'This deployment stores settings read-only.',
   unavailable: 'This plugin is not loaded, so it cannot be configured right now.',
   loading: 'Reading settings…',
+  sessionControls: 'Predictions for this conversation',
+  automaticOn: 'Auto: on',
+  automaticOff: 'Auto: off',
+  pauseAutomatic: 'Pause automatic predictions for this conversation',
+  resumeAutomatic: 'Resume automatic predictions for this conversation',
+  generateSuggestion: 'Generate suggestion',
 }
 
 export type LocaleKey = keyof typeof en

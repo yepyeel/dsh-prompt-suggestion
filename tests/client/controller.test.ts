@@ -15,8 +15,13 @@ describe('prediction lifecycle', () => {
   let suggest: ReturnType<
     typeof vi.fn<(id: string, signal: AbortSignal) => Promise<SuggestResponse>>
   >
-  const update = (running: boolean, sessionId = 'one', blank = true, enabled = true) =>
-    controller.update({ sessionId, running, blank, enabled })
+  const update = (
+    running: boolean,
+    sessionId = 'one',
+    blank = true,
+    enabled = true,
+    automatic = true,
+  ) => controller.update({ sessionId, running, blank, enabled, automatic })
   beforeEach(() => {
     vi.useFakeTimers()
     suggest = vi.fn().mockResolvedValue({ suggestion: '继续测试', model: 'fixture/test' })
@@ -38,6 +43,70 @@ describe('prediction lifecycle', () => {
     expect(suggest).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(suggest).toHaveBeenCalledTimes(1)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
+  })
+
+  it('allows an explicit request on an idle mount while automatic prediction is paused', async () => {
+    update(false, 'one', true, true, false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(suggest).not.toHaveBeenCalled()
+    expect(controller.requestManual()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
+    controller.dismiss()
+    expect(controller.requestManual()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(suggest).toHaveBeenCalledTimes(2)
+    update(true, 'one', true, true, false)
+    update(false, 'one', true, true, false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(suggest).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['running', 'draft', 'disabled', 'composition'] as const)(
+    'refuses manual requests during %s',
+    (condition) => {
+      update(condition === 'running', 'one', condition !== 'draft', condition !== 'disabled', false)
+      if (condition === 'composition') controller.startComposition()
+      expect(controller.requestManual()).toBe(false)
+      expect(suggest).not.toHaveBeenCalled()
+    },
+  )
+
+  it('runs a manual request immediately in place of a scheduled automatic request', async () => {
+    update(true)
+    update(false)
+    expect(controller.requestManual()).toBe(true)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(suggest).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores repeated manual commands while a request is pending', async () => {
+    const pending = deferred<SuggestResponse>()
+    suggest.mockReturnValueOnce(pending.promise)
+    update(false)
+    expect(controller.requestManual()).toBe(true)
+    expect(controller.requestManual()).toBe(false)
+    expect(suggest).toHaveBeenCalledTimes(1)
+    pending.resolve({ suggestion: 'next', model: 'fixture/test' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next' })
+  })
+
+  it('invalidates pending automatic results when this conversation is paused', async () => {
+    const pending = deferred<SuggestResponse>()
+    suggest.mockReturnValueOnce(pending.promise)
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(250)
+    const signal = suggest.mock.calls[0][1]
+    update(false, 'one', true, true, false)
+    pending.resolve({ suggestion: 'stale', model: 'fixture/test' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(signal.aborted).toBe(true)
+    expect(controller.getSnapshot().kind).toBe('idle')
+    expect(controller.requestManual()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
     expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
   })
 

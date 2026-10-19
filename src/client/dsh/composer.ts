@@ -99,3 +99,28 @@ export function listenComposerInput(
     card?.removeEventListener('input', activity.dismiss, true)
   }
 }
+
+export function listenPredictionShortcut(root: HTMLElement, request: () => boolean) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.isComposing ||
+      event.keyCode === 229 ||
+      !event.altKey ||
+      !event.shiftKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      (event.code !== 'KeyP' && event.key.toLowerCase() !== 'p')
+    )
+      return
+    const editor = findComposer(root)?.querySelector(EDITOR_SELECTOR)
+    const active = document.activeElement
+    if (!editor || !active || !(active === editor || editor.contains(active))) return
+    if (!request()) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  window.addEventListener('keydown', onKeyDown, true)
+  return () => window.removeEventListener('keydown', onKeyDown, true)
+}
