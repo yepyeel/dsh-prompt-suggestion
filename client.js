@@ -102,8 +102,13 @@ window.__ModuleLoader__.load({
         overflow: hidden;
         opacity: .9;
       }
-      .dsh-ps-key {
+      .dsh-ps-keyWrap {
         flex: none;
+        display: flex;
+        align-items: center;
+      }
+      .dsh-ps-key {
+        display: inline-block;
         font-family: var(--ds-font-family-code);
         font-size: 10px;
         line-height: 14px;
@@ -429,7 +434,7 @@ window.__ModuleLoader__.load({
           letterSpacing: style.letterSpacing,
           color: style.color,
           maxLines,
-          keyOffset: Math.max(0, Math.round((lineHeight - 16) / 2)),
+          lineHeightPx: `${lineHeight}px`,
         })
         return true
       }, [])
@@ -631,9 +636,9 @@ window.__ModuleLoader__.load({
               },
             }, suggestion),
             h('span', {
-              className: 'dsh-ps-key',
-              style: { marginTop: `${box.keyOffset}px` },
-            }, 'Tab'),
+              className: 'dsh-ps-keyWrap',
+              style: { height: box.lineHeightPx },
+            }, h('span', { className: 'dsh-ps-key' }, 'Tab')),
           )
           : null,
       )
