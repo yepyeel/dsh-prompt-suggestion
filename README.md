@@ -41,6 +41,41 @@ pnpm install --prod
 
 本地目录会以 `link:` 方式挂载；改动文件后，在插件列表里停用再启用即可生效。
 
+## 更新
+
+插件没有内置的自动更新，更新方式是「移除 + 重新安装」。
+
+### 从 Git 安装的用户
+
+在 DSH 会话里说：
+
+> 更新 dsh-prompt-suggestion
+
+对应的操作：
+
+1. `plugin_manager list_bundles` 找到该包的 `source`；
+2. `remove_bundle` 卸载；
+3. `install_bundle` 用同一个 `source` 重装；
+4. 如果返回 `restart-required`，重启 DSH。
+
+重新安装会重新解析 Git 地址并拿到最新提交；设置覆盖行按插件 id 记录，不会因为重装丢失。
+
+### 本地 link 安装的用户
+
+```bash
+git pull
+```
+
+然后在插件列表里停用再启用；Host 改动需要重启 DSH。
+
+### 建议固定版本
+
+安装时带上 tag，升级时再显式换掉：
+
+> 安装 https://github.com/yepyeel/dsh-prompt-suggestion#v0.1.0
+
+当前版本见 [Releases](https://github.com/yepyeel/dsh-prompt-suggestion/releases)。
+
 ## 使用
 
 1. 正常发一条消息。
