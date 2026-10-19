@@ -12,7 +12,8 @@ Closes #
 
 - [ ] `pnpm build`
 - [ ] `pnpm check`
-- [ ] `client.js` 是从 `client/` 重新构建的
+- [ ] `index.js` / `client.js` 是从 `src/` 重新构建的
+- [ ] 构建产物比对及只安装运行时依赖的安装包检查通过
 - [ ] 安装/启用后 Host 无报错
 - [ ] 设置页可以读取并保存
 - [ ] ghost 能显示，`Tab` / `→` 能填入且不发送
@@ -28,3 +29,4 @@ Closes #
 - [ ] 新增设置字段是 volatile，并且在每次请求时现读
 - [ ] 文案同时补了 `zh` / `en`
 - [ ] 文档已同步（README / DESIGN）
+- [ ] 已区分自动化测试与实际 DSH / 浏览器验收结果

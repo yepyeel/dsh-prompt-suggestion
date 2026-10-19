@@ -4,9 +4,21 @@
   "private": true,
   "description": "Predicts the next message as gray ghost text in the composer, with a settings page for prompt and model.",
   "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "build": "node scripts/build-client.mjs",
-    "check": "node --check index.js && node --check client.js"
+    "build": "node scripts/build.mjs",
+    "build:check": "node scripts/build.mjs --check",
+    "dev": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check . --error-on-warnings",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:package": "node scripts/test-package.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build:check && pnpm test:package"
   },
   "exports": {
     ".": "./index.js",
@@ -54,6 +66,17 @@
     "suggestion"
   ],
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@biomejs/biome": "2.5.15",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "16.3.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "esbuild": "^0.28.2",
+    "jsdom": "26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "~5.9.3",
+    "vitest": "4.0.18"
   }
 }

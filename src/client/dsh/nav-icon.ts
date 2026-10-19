@@ -25,7 +25,7 @@ const SPARKLE_PATHS = [
   'M12.375 10.4418C12.375 11.7751 13.0417 12.4418 14.375 12.4418C13.0417 12.4418 12.375 13.1084 12.375 14.4418C12.375 13.1084 11.7083 12.4418 10.375 12.4418C11.7083 12.4418 12.375 11.7751 12.375 10.4418Z',
 ]
 
-function createSparkle(className) {
+function createSparkle(className: string | null) {
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('width', '16')
   svg.setAttribute('height', '16')
@@ -52,16 +52,16 @@ function createSparkle(className) {
  * @param {readonly string[]} labels - Current and alternate labels of our section.
  * @returns {boolean} Whether a glyph was replaced on this pass.
  */
-export function syncSettingsNavIcon(labels) {
+export function syncSettingsNavIcon(labels: readonly string[]) {
   if (typeof document === 'undefined') return false
   const list = document.querySelector(NAV_LIST)
   if (!list) return false
   const wanted = new Set(labels)
   let patched = false
-  for (const button of list.querySelectorAll('button')) {
+  for (const button of list.querySelectorAll<HTMLButtonElement>('button')) {
     const label = button.querySelector(NAV_LABEL)?.textContent?.trim()
     if (!label || !wanted.has(label)) continue
-    const icon = button.querySelector(`svg${NAV_ICON}`)
+    const icon = button.querySelector<SVGElement>(`svg${NAV_ICON}`)
     if (!icon || icon.dataset.psNavIcon === PATCHED) continue
     icon.replaceWith(createSparkle(icon.getAttribute('class')))
     patched = true
@@ -74,7 +74,7 @@ export function syncSettingsNavIcon(labels) {
  * @param {() => readonly string[]} getLabels - Resolves the labels to match.
  * @returns {() => void} Disposer that stops observing.
  */
-export function installSettingsNavIcon(getLabels) {
+export function installSettingsNavIcon(getLabels: () => readonly string[]) {
   if (typeof document === 'undefined' || !document.body) return () => {}
   let frame = 0
   const run = () => {
