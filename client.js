@@ -786,37 +786,35 @@ var init_settings = __esm({
       }
       .dsh-pset-select {
         position: relative;
-        display: inline-block;
-        align-self: flex-start;
-        width: auto;
-        min-width: 160px;
+        display: block;
+        width: 100%;
         max-width: 320px;
       }
       .dsh-pset-selectTrigger {
         box-sizing: border-box;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         width: 100%;
-        min-height: 40px;
-        padding: 0 14px 0 16px;
-        border: none;
-        border-radius: 12px;
-        background: var(--dsw-alias-bg-layer-2, #f2f3f5);
+        height: 34px;
+        padding: 0 10px 0 12px;
+        border: .5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-l2));
+        border-radius: var(--dsw-radius-md);
+        background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2));
         font: inherit;
-        font-size: 15px;
-        line-height: 1.45;
+        font-size: 13px;
+        line-height: 1.5;
         color: var(--dsw-alias-label-primary);
         text-align: left;
         cursor: pointer;
-        transition: background-color .15s ease;
+        transition: border-color .15s ease;
       }
       .dsh-pset-selectTrigger:hover:not(:disabled) {
-        background: var(--dsw-alias-bg-layer-3, #eceef1);
+        border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
       }
       .dsh-pset-selectTrigger:focus-visible {
-        outline: 2px solid var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary));
-        outline-offset: 2px;
+        outline: none;
+        border-color: var(--dsw-alias-state-business-primary, var(--dsw-alias-brand-primary));
       }
       .dsh-pset-selectTrigger:disabled {
         color: var(--dsw-alias-label-tertiary);
@@ -833,38 +831,66 @@ var init_settings = __esm({
       .dsh-pset-selectChevron {
         flex: none;
         display: flex;
-        color: var(--dsw-alias-label-secondary, #81858c);
+        color: var(--dsw-alias-label-tertiary, #a1a5ab);
+        transition: transform .16s ease;
+      }
+      .dsh-pset-selectTrigger[aria-expanded="true"] .dsh-pset-selectChevron {
+        transform: rotate(180deg);
       }
       .dsh-pset-selectMenu {
         position: fixed;
         z-index: 1000;
         box-sizing: border-box;
         margin: 0;
-        padding: 6px;
+        padding: 4px;
         list-style: none;
-        max-height: 280px;
+        max-height: 260px;
         overflow-y: auto;
         border: .5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, .06));
-        border-radius: 16px;
+        border-radius: 12px;
         background: var(--dsw-alias-bg-layer-3, #fff);
-        box-shadow: 0 16px 40px rgba(0, 0, 0, .14), 0 2px 8px rgba(0, 0, 0, .06);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, .12), 0 2px 6px rgba(0, 0, 0, .06);
       }
       .dsh-pset-selectOption {
+        position: relative;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         box-sizing: border-box;
-        min-height: 40px;
-        padding: 8px 12px;
-        border-radius: 10px;
-        font-size: 15px;
-        line-height: 1.45;
+        min-height: 32px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.5;
         color: var(--dsw-alias-label-primary);
         cursor: pointer;
         user-select: none;
+        transition: background-color .14s ease, color .14s ease;
       }
+      .dsh-pset-selectOption::before {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 50%;
+        width: 2px;
+        height: 0;
+        border-radius: 999px;
+        background: var(--dsw-alias-brand-primary);
+        opacity: 0;
+        transform: translateY(-50%);
+        transition: height .16s ease, opacity .16s ease;
+      }
+      .dsh-pset-selectOption:hover,
       .dsh-pset-selectOption[data-active="true"] {
-        background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, .04));
+        background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, .06));
+      }
+      .dsh-pset-selectOption:hover::before,
+      .dsh-pset-selectOption[data-active="true"]::before {
+        height: 14px;
+        opacity: 1;
+      }
+      .dsh-pset-selectOption:active {
+        background: var(--dsw-alias-interactive-bg-active, rgba(38, 49, 72, .1));
       }
       .dsh-pset-selectOptionLabel {
         flex: 1;
