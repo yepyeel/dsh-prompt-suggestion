@@ -282,4 +282,13 @@ describe('prediction lifecycle', () => {
     await vi.advanceTimersByTimeAsync(1_000)
     expect(suggest).toHaveBeenCalledTimes(1)
   })
+
+  it('stays idle without retrying when the model declines to provide a candidate', async () => {
+    suggest.mockResolvedValue({ suggestion: null, model: 'fixture/test' })
+    update(true)
+    update(false)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(suggest).toHaveBeenCalledTimes(1)
+    expect(controller.getSnapshot().kind).toBe('idle')
+  })
 })

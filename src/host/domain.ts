@@ -60,8 +60,32 @@ export function buildTranscript(messages: readonly Message[], maxMessages = 16) 
     .join('\n\n')
 }
 
-/** First usable line of the model reply, with list and quote decoration removed. */
-export function parseSuggestion(raw: unknown) {
+function comparable(text: string) {
+  return text
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/gu, ' ')
+    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/gu, '')
+    .replace(/[.!?。！？]+$/u, '')
+    .trim()
+    .toLowerCase()
+}
+
+function isGenericContinuation(text: string) {
+  const compact = text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, '')
+  return (
+    /^(?:好的?|可以)?请?继续(?:吧|下去|进行|执行|处理|下一步)?$/u.test(compact) ||
+    /^(?:ok(?:ay)?|sure|yes)?(?:please)?(?:continue|proceed|goahead|keepgoing)(?:please)?$/.test(
+      compact,
+    )
+  )
+}
+
+/** Parse a useful candidate, including explicit abstention and historical duplicate checks. */
+export function parseSuggestion(raw: unknown, messages: readonly Message[] = []) {
   if (typeof raw !== 'string') return null
   if (raw.includes('```')) return null
   const line = raw
@@ -76,6 +100,10 @@ export function parseSuggestion(raw: unknown) {
     .replace(/["'“”‘’`]+$/, '')
     .trim()
   if (!text || text.length > 200) return null
+  const key = comparable(text)
+  if (key === 'no_suggestion' || key === 'null' || isGenericContinuation(text)) return null
+  if (messages.some((message) => message?.role === 'user' && comparable(textOf(message)) === key))
+    return null
   return text
 }
 

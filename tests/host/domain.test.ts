@@ -91,6 +91,52 @@ describe('transcript budget', () => {
 })
 
 describe('suggestion parsing', () => {
+  it.each(['', '  ', 'NO_SUGGESTION', '“NO_SUGGESTION”', 'null', 'NO_SUGGESTION\n无法确定下一步'])(
+    'accepts abstention %j as a normal empty result',
+    (raw) => expect(parseSuggestion(raw)).toBeNull(),
+  )
+
+  it.each([
+    '继续',
+    '请继续。',
+    '好的，请继续吧！',
+    '继续下一步',
+    'continue',
+    'Please continue.',
+    'Go ahead!',
+    'OK, keep going.',
+  ])('discards generic continuation %j', (raw) => expect(parseSuggestion(raw)).toBeNull())
+
+  it.each([
+    '继续补齐回归测试',
+    'Continue debugging the timeout',
+    '采用第二个方案',
+    'B',
+    '不用部署',
+  ])('preserves specific actions and short answers %j', (raw) =>
+    expect(parseSuggestion(raw)).toBe(raw),
+  )
+
+  it('compares all user history after normalizing whitespace, quotes, case, and ending punctuation', () => {
+    const messages = [
+      message('user', 'Please   add regression tests.'),
+      message('assistant', '完成'),
+      message('user', '检查取消逻辑。'),
+    ]
+    expect(parseSuggestion('1. “please add regression tests”', messages)).toBeNull()
+    expect(parseSuggestion('检查取消逻辑！', messages)).toBeNull()
+    expect(parseSuggestion('检查新的超时路径', messages)).toBe('检查新的超时路径')
+  })
+
+  it('does not treat assistant or tool text as a previous user request', () => {
+    expect(
+      parseSuggestion('添加回归测试', [
+        message('assistant', '添加回归测试'),
+        message('tool', '添加回归测试'),
+      ]),
+    ).toBe('添加回归测试')
+  })
+
   it.each([
     ['1. “继续添加测试”\n其他内容', '继续添加测试'],
     ['- next step', 'next step'],
