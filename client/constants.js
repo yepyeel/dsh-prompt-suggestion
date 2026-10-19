@@ -1,0 +1,9 @@
+export const ENDPOINT = 'prompt-suggestion/suggest'
+export const MODELS_ENDPOINT = 'prompt-suggestion/models'
+export const DEBOUNCE_MS = 250
+export const REQUEST_TIMEOUT_MS = 8_000
+export const PLACEHOLDER_SELECTOR = '[data-composer-placeholder]'
+export const EDITOR_SELECTOR = '[contenteditable="true"]'
+export const SETTINGS_NS = 'prompt-suggestion'
+export const LOCALE_NS = 'settings.promptSuggestion'
+export const FALLBACK_PROMPT = '你是一个输入预测器。根据对话记录，预测用户接下来最可能输入的一条消息。只输出这条消息本身。'

@@ -10,8 +10,9 @@ Closes #
 
 <!-- 说明你实际怎么验证的，不要只写“已测试” -->
 
-- [ ] `node --check index.js`
-- [ ] `node --check client.js`
+- [ ] `pnpm build`
+- [ ] `pnpm check`
+- [ ] `client.js` 是从 `client/` 重新构建的
 - [ ] 安装/启用后 Host 无报错
 - [ ] 设置页可以读取并保存
 - [ ] ghost 能显示，`Tab` / `→` 能填入且不发送

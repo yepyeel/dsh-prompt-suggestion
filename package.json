@@ -4,6 +4,10 @@
   "private": true,
   "description": "Predicts the next message as gray ghost text in the composer, with a settings page for prompt and model.",
   "type": "module",
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "check": "node --check index.js && node --check client.js"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -48,5 +52,8 @@
     "prompt",
     "autocomplete",
     "suggestion"
-  ]
+  ],
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

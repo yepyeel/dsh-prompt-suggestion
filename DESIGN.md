@@ -421,6 +421,7 @@ M0 不通过就不进入 M1：定位和键位是这件事能不能成立的前�
 - volatile 字段在 `apply` 里是 accessor 而不是值：每次请求都用 `resolveSettings(config)` 现读，才能拿到最新值。
 - 用 `ctx.settings.configure({ auto: false }, ctx.fiber)` 关掉 Plugins 页的自动表单，避免与自有页面重复。
 - 设置页不直接 `require` 官方 primitives，而是复刻它的标记与 CSS：36×20 开关、34px 输入框、13px 标签 / 12px 提示 / 14px 引言 / 16px 标题、`.5px border-l4` 边框、字段间 `border-l2` 分隔线、官方保存按钮。
+- Client 源码按 ghost / settings / 组件 / 样式拆在 `client/`，由 `scripts/build-client.mjs`（esbuild）打成单个 classic bundle `client.js`；DSH 只加载后者，因此构建产物必须与源码一起提交。
 - 模型目录通过 Host 的 `llm.listProviders()` + `llm.listModels()` 汇总，缓存 60 秒。
 - 预测长度上限 70 个汉字 / 40 个英文单词；`maxTokens` 默认 256，给 reasoning 和长句留余量。
 - ghost 最多 3 行：按工具栏上沿动态计算可用高度做行数裁剪，避免盖住工具栏。
@@ -444,3 +445,38 @@ M0 不通过就不进入 M1：定位和键位是这件事能不能成立的前�
 2. **Client 刷新**：页面可能需要刷新一次才能拿到最新的客户端包。
 3. **依赖**：插件现在依赖 `@deepseek-ai/schemastery`（已装进 `node_modules`）；打包分发时需一并安装。
 4. 没有埋点；会话级开关仍缺。
+
+---
+
+## 14. 源码结构
+
+```text
+.
+├── client/                     # Client 源码（ESM，按职责拆分）
+│   ├── entry.cjs               # bundle 入口：CJS 导出 apply / inject
+│   ├── index.js                # 只负责 slots / locale / configForms 注册
+│   ├── constants.js            # 端点、超时、selector、命名空间
+│   ├── locales.js              # zh / en 设置页文案
+│   ├── ghost.js                # 输入框 ghost 预测
+│   ├── settings.js             # 设置页
+│   ├── components/
+│   │   └── dropdown-select.js  # 自定义模型下拉
+│   └── styles/
+│       ├── ghost.js            # GHOST_CSS
+│       └── settings.js         # SETTINGS_CSS
+├── scripts/
+│   └── build-client.mjs        # esbuild 构建 client.js
+├── locale/                     # 插件元信息 zh / en
+├── index.js                    # Host 半部
+├── client.js                   # 构建产物，勿直接编辑
+├── cordis.patch.yml
+├── icon.svg
+└── package.json
+```
+
+**边界约定**
+
+- `client/` 是唯一手写的客户端源码；`pnpm build` 通过 `scripts/build-client.mjs` 生成根目录 `client.js`。
+- DSH 的 `dsh.client` 加载协议是 classic script + `window.__ModuleLoader__.load({ id, factory })`，不解析发布包里的相对 ESM；因此不能让 `exports` 直接指向 `client/index.js`。
+- `client/entry.cjs` 只做 CJS 适配，让 factory 返回 plain `{ apply, inject }`，与 DSH 官方客户端 bundle 的导出形态一致。
+- 样式以 CSS 字符串模块放在 `client/styles/`，避免引入额外的 CSS loader；新增组件按 `components/` / `styles/` 归类，新增文案同时补 `locales.js` 的 `zh` 与 `en`。

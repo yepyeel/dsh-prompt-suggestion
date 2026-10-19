@@ -16,9 +16,11 @@
 git clone https://github.com/yepyeel/dsh-prompt-suggestion.git
 cd dsh-prompt-suggestion
 pnpm install
-node --check index.js
-node --check client.js
+pnpm build
+pnpm check
 ```
+
+`client.js` 是由 `client/` 下的模块构建出来的 DSH classic bundle，不要直接编辑；改完 `client/` 后执行 `pnpm build`，并把生成的 `client.js` 一起提交。
 
 安装到 DSH 后：
 
@@ -42,12 +44,13 @@ node --check client.js
 - 不要向 Session 追加自定义事件；不要把预测结果注入模型上下文。
 - 新增运行时依赖需要在 PR 里说明理由和体积影响；目前只有 `@deepseek-ai/schemastery`。
 - 新增界面文案时同时补 `zh` / `en` 两份字典。
+- Client 代码按职责放在 `client/`：`ghost.js`（输入框预测）、`settings.js`（设置页）、`components/`（通用组件）、`styles/`（CSS 字符串）、`locales.js`、`constants.js`；`client/index.js` 只做注册，`client/entry.cjs` 只做 bundle 的 CJS 导出适配。
 
 ## PR 要求
 
 - 一个 PR 只解决一个问题，描述里写清背景和取舍。
 - 关联 Issue（例如 `Closes #123`）。
-- 必须通过：`node --check index.js && node --check client.js`。
+- 必须通过：`pnpm build && pnpm check`，且 `client.js` 与 `client/` 源码保持同步。
 - UI 改动附截图或录屏，尽量覆盖明暗主题。
 - 行为改动同步更新 `README.md` 与 `DESIGN.md`。
 - 不要提交 `node_modules/`、`.DS_Store`、`.scratch/`。

@@ -98,9 +98,37 @@ git pull
 ## 实现概览
 
 - **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`；`GET /prompt-suggestion/models` 汇总可用模型。
-- **Client**：在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
+- **Client**：源码按职责拆在 `client/`（`ghost.js`、`settings.js`、`components/`、`styles/` 等），由 esbuild 打成 DSH 加载的 classic bundle `client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
 - **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
 - **失败降级**：超时、限流、解析失败一律静默返回空，不影响正常输入。
+
+## 项目结构
+
+```text
+.
+├── client/                     # Client 源码（ESM，按职责拆分）
+│   ├── entry.cjs               # bundle 入口：CJS 导出 apply / inject
+│   ├── index.js                # 只负责 slots / locale / configForms 注册
+│   ├── constants.js            # 端点、超时、selector、命名空间
+│   ├── locales.js              # zh / en 设置页文案
+│   ├── ghost.js                # 输入框 ghost 预测
+│   ├── settings.js             # 设置页
+│   ├── components/
+│   │   └── dropdown-select.js  # 自定义模型下拉
+│   └── styles/
+│       ├── ghost.js            # GHOST_CSS
+│       └── settings.js         # SETTINGS_CSS
+├── scripts/
+│   └── build-client.mjs        # esbuild 构建 client.js
+├── locale/                     # 插件元信息 zh / en
+├── index.js                    # Host 半部
+├── client.js                   # 构建产物，勿直接编辑
+├── cordis.patch.yml
+├── icon.svg
+└── package.json
+```
+
+`client.js` 由 `client/` 构建生成；DSH 只加载这个 classic bundle，因此提交时两者必须保持同步。
 
 更完整的设计与取舍见 [DESIGN.md](./DESIGN.md)。
 
@@ -115,12 +143,14 @@ git pull
 
 ```bash
 pnpm install
-node --check index.js
-node --check client.js
+pnpm build
+pnpm check
 ```
 
+`client.js` 是构建产物，源码在 `client/`；改完源码后运行 `pnpm build` 重新生成，不要直接编辑 `client.js`。
+
 - Host 改动：在插件列表里停用再启用，或重启 DSH。
-- Client 改动：同样停用/启用；样式没更新时刷新页面。
+- Client 改动：构建后同样停用/启用；样式没更新时刷新页面。
 
 贡献流程与 PR 规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
