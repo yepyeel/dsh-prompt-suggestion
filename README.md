@@ -12,69 +12,96 @@
 
 ## 环境要求
 
-- DSH Desktop，或 `dsh --profile web`（需要 `settings.section` 与 `configForms` 服务）
+- DSH Desktop，或 `dsh web`（旧版本写作 `dsh --profile web`）
+- 从 GitHub 安装时，Host 所在机器需要能访问 GitHub
 - 一个可用的模型 provider（默认跟随当前会话）
 
 ## 安装
 
-插件是标准 DSH bundle（`dsh.bundle.patch` + `dsh.client`），可以直接从仓库安装。
+插件是标准 DSH bundle（`dsh.bundle.patch` + `dsh.client`），已经在仓库里带了构建好的 `client.js`，不需要先发布到 npm，直接在 DSH 里从 GitHub 地址安装即可。
 
-### 方式一：从 Git 仓库安装（推荐）
+### 从侧边栏安装（推荐）
 
-在 DSH 会话里让 agent 安装：
+1. 打开 DSH，在左侧侧边栏点 **插件**。
+2. 点 **添加插件**。
+3. 在输入框里填仓库地址：
 
-> 安装 https://github.com/yepyeel/dsh-prompt-suggestion
+   ```text
+   https://github.com/yepyeel/dsh-prompt-suggestion
+   ```
 
-底层操作是 `plugin_manager install_bundle`，target 填上面的仓库地址。安装完成后插件默认启用，配置写入当前 profile。
+   也可以填 pnpm 的 GitHub 简写：`github:yepyeel/dsh-prompt-suggestion`。
+4. 点 **安装**，等 pnpm 执行完成。
+5. 按提示点 **立即启用**。如果安装结果提示需要重启 DSH，重启后再用。
 
-### 方式二：本地目录
+插件安装到当前 profile，安装完成后默认启用。
+
+> Git 地址不经过 npm 安装源，需要 Host 直接访问 GitHub（或配置代理）。如果提示「无法访问 GitHub」，先处理网络后重试。这个插件没有发布到 npm，所以不能改填包名。
+
+### DSH Desktop
+
+直接按上面的步骤在桌面 App 里安装：
+
+- Desktop 自带 Node.js 和 pnpm，不需要另外装 pnpm。
+- 插件由桌面 App 管理，装在 Desktop 的 profile 里。
+- Desktop profile 不能用 `dsh plugin` 命令行管理；安装、卸载和更新都走侧边栏的插件页。
+
+### dsh web
+
+在运行 DSH 的机器上启动 Web：
+
+```bash
+dsh web
+```
+
+打开它输出的地址，然后同样在侧边栏 **插件 → 添加插件** 里填 GitHub 地址。
+
+- Host 需要能找到 `pnpm`。先运行 `pnpm -v` 确认；没有的话先 `npm install -g pnpm`（或 `corepack enable`）。
+- 安装发生在运行 `dsh web` 的机器上，不是打开浏览器的机器。远程访问时，pnpm 和 GitHub 网络都要在那台 Host 上可用。
+- 插件装在 web profile 里。Desktop 和 web 的 profile 相互独立，两边需要分别安装。
+
+### 从本地目录安装（开发）
 
 ```bash
 git clone https://github.com/yepyeel/dsh-prompt-suggestion.git
 cd dsh-prompt-suggestion
-pnpm install --prod
+pnpm install
+pnpm build
 ```
 
-然后让 agent 用绝对路径安装：
+然后在 **插件 → 添加插件** 里填目录的绝对路径（例如 `/path/to/dsh-prompt-suggestion`）。本地目录会以 `link:` 方式挂载；改动文件后，在插件列表里停用再启用即可生效，Host 改动需要重启 DSH。
 
-> 安装 /path/to/dsh-prompt-suggestion
+### 固定版本
 
-本地目录会以 `link:` 方式挂载；改动文件后，在插件列表里停用再启用即可生效。
+安装时在地址后带上 tag，升级时再显式换掉：
+
+```text
+https://github.com/yepyeel/dsh-prompt-suggestion#v0.1.0
+```
+
+或 `github:yepyeel/dsh-prompt-suggestion#v0.1.0`。当前版本见 [Releases](https://github.com/yepyeel/dsh-prompt-suggestion/releases)。
 
 ## 更新
 
-插件没有内置的自动更新，更新方式是「移除 + 重新安装」。
+插件没有内置的自动更新，第三方插件在 DSH 里的升级方式就是「卸载 + 重新安装」。
 
-### 从 Git 安装的用户
+### 从 GitHub 安装的用户
 
-在 DSH 会话里说：
+1. 在 **插件** 页找到 `dsh-prompt-suggestion`，卸载它。
+2. 点 **添加插件**，重新填同一个 GitHub 地址并安装。
+3. 如果提示需要重启 DSH，重启后生效。
 
-> 更新 dsh-prompt-suggestion
-
-对应的操作：
-
-1. `plugin_manager list_bundles` 找到该包的 `source`；
-2. `remove_bundle` 卸载；
-3. `install_bundle` 用同一个 `source` 重装；
-4. 如果返回 `restart-required`，重启 DSH。
-
-重新安装会重新解析 Git 地址并拿到最新提交；设置覆盖行按插件 id 记录，不会因为重装丢失。
+重新安装会重新解析 Git 地址并拿到最新提交；设置覆盖行按插件 id 记录，不会因为重装丢失。Desktop 和 `dsh web` 使用各自的 profile，更新时也要分别操作。
 
 ### 本地 link 安装的用户
 
 ```bash
 git pull
+pnpm install
+pnpm build
 ```
 
 然后在插件列表里停用再启用；Host 改动需要重启 DSH。
-
-### 建议固定版本
-
-安装时带上 tag，升级时再显式换掉：
-
-> 安装 https://github.com/yepyeel/dsh-prompt-suggestion#v0.1.0
-
-当前版本见 [Releases](https://github.com/yepyeel/dsh-prompt-suggestion/releases)。
 
 ## 使用
 
