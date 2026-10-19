@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../src/client/api'
 import type { ClientContext, GhostProps, SettingsSnapshot } from '../../src/client/dsh/contracts'
 import { apply } from '../../src/client/index'
+import { zh } from '../../src/client/locales'
 import type { SuggestResponse } from '../../src/shared/contracts'
 
 describe('composer integration', () => {
@@ -16,6 +17,7 @@ describe('composer integration', () => {
   let settings: SettingsSnapshot
   let settingsListeners: Set<() => void>
   let Ghost: React.ComponentType<GhostProps>
+  let Controls: React.ComponentType<GhostProps>
   const actions = {
     captureInsertion: vi.fn(() => ({ revision: 7 })),
     insertText: vi.fn(() => true),
@@ -37,7 +39,9 @@ describe('composer integration', () => {
             </span>
           </div>
         </div>
-        <div data-toolbar="" />
+        <div data-toolbar="">
+          <Controls {...props()} />
+        </div>
         {/* biome-ignore lint/a11y/useSemanticElements: Match DSH's contenteditable composer in this integration fixture. */}
         <div
           contentEditable
@@ -52,6 +56,7 @@ describe('composer integration', () => {
   }
   beforeEach(() => {
     vi.useFakeTimers()
+    localStorage.clear()
     running = true
     draft = ''
     sessionId = 'one'
@@ -60,7 +65,7 @@ describe('composer integration', () => {
     settingsListeners = new Set()
     const components = new Map<string, unknown>()
     const ctx: ClientContext = {
-      locale: { bind: () => (key) => key, register: () => {} },
+      locale: { bind: () => (key) => zh[key], register: () => {} },
       configForms: {
         get: () => ({
           getSnapshot: () => settings,
@@ -82,6 +87,7 @@ describe('composer integration', () => {
     }
     apply(ctx)
     Ghost = components.get('prompt-ghost') as React.ComponentType<GhostProps>
+    Controls = components.get('prompt-suggestion-controls') as React.ComponentType<GhostProps>
     vi.spyOn(api, 'suggest').mockResolvedValue({ suggestion: '继续测试', model: 'fixture/model' })
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: HTMLElement,
@@ -283,5 +289,79 @@ describe('composer integration', () => {
     expect(fireEvent.keyDown(other, { key: 'Tab' })).toBe(true)
     expect(actions.insertText).not.toHaveBeenCalled()
     other.remove()
+  })
+
+  it('pauses automatic prediction per session and generates manually without sending', async () => {
+    const view = render(<Composer />)
+    fireEvent.click(view.getByRole('button', { name: '自动预测：开' }))
+    running = false
+    view.rerender(<Composer />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    expect(api.suggest).not.toHaveBeenCalled()
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: '生成建议' }))
+    })
+    expect(api.suggest).toHaveBeenCalledTimes(1)
+    expect(view.container.querySelector('.dsh-ps-text')?.textContent).toBe('继续测试')
+    expect(actions.submit).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(view.getByRole('textbox'))
+    sessionId = 'two'
+    view.rerender(<Composer />)
+    expect(view.getByRole('button', { name: '自动预测：开' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    sessionId = 'one'
+    view.rerender(<Composer />)
+    expect(view.getByRole('button', { name: '自动预测：关' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+    expect(api.suggest).toHaveBeenCalledTimes(1)
+    expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+  })
+
+  it('generates from Alt+Shift+P only when the idle composer owns focus', async () => {
+    running = false
+    const view = render(<Composer />)
+    const key = { key: 'P', code: 'KeyP', altKey: true, shiftKey: true }
+    const other = document.createElement('input')
+    document.body.append(other)
+    other.focus()
+    expect(fireEvent.keyDown(other, key)).toBe(true)
+    expect(api.suggest).not.toHaveBeenCalled()
+    other.remove()
+    const editor = view.getByRole('textbox')
+    editor.focus()
+    expect(fireEvent.keyDown(editor, { ...key, isComposing: true })).toBe(true)
+    expect(fireEvent.keyDown(editor, { ...key, repeat: true })).toBe(true)
+    expect(api.suggest).not.toHaveBeenCalled()
+    await act(async () => {
+      expect(fireEvent.keyDown(editor, key)).toBe(false)
+    })
+    expect(api.suggest).toHaveBeenCalledTimes(1)
+    expect(view.container.querySelector('.dsh-ps-text')?.textContent).toBe('继续测试')
+    expect(actions.insertText).not.toHaveBeenCalled()
+    expect(actions.submit).not.toHaveBeenCalled()
+    setEnabled(false)
+    expect(view.queryByRole('group', { name: '本会话的输入预测' })).toBeNull()
+    expect(fireEvent.keyDown(editor, key)).toBe(true)
+    expect(api.suggest).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables manual generation while running or while a draft or attachment exists', () => {
+    const view = render(<Composer />)
+    const disabled = () =>
+      (view.getByRole('button', { name: '生成建议' }) as HTMLButtonElement).disabled
+    expect(disabled()).toBe(true)
+    running = false
+    draft = 'draft'
+    view.rerender(<Composer />)
+    expect(disabled()).toBe(true)
+    draft = ''
+    attachmentIds = ['file']
+    view.rerender(<Composer />)
+    expect(disabled()).toBe(true)
+    expect(api.suggest).not.toHaveBeenCalled()
   })
 })

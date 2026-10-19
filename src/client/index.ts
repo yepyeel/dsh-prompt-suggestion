@@ -2,7 +2,9 @@ import { createElement as h } from 'react'
 import { LOCALE_NS, SETTINGS_NS } from '../shared/defaults'
 import type { ClientContext, GhostProps } from './dsh/contracts'
 import { installSettingsNavIcon } from './dsh/nav-icon'
+import { PredictionControls } from './ghost/prediction-controls'
 import { ConfiguredPromptGhost } from './ghost/prompt-ghost'
+import { createSessionControls } from './ghost/session-controls'
 import { en, zh } from './locales'
 import { SettingsPage } from './settings/settings-page'
 
@@ -16,12 +18,22 @@ export function apply(ctx: ClientContext) {
     'prompt-suggestion: settings nav icon',
   )
   const form = ctx.configForms.get(SETTINGS_NS)
+  const controls = createSessionControls()
+  ctx.effect(() => () => controls.dispose(), 'prompt-suggestion: session controls')
   const SettingsEntry = () => h(SettingsPage, { form, t })
-  const GhostEntry = (props: GhostProps) => h(ConfiguredPromptGhost, { ...props, form })
+  const GhostEntry = (props: GhostProps) => h(ConfiguredPromptGhost, { ...props, form, controls })
+  const ControlsEntry = (props: GhostProps) =>
+    h(PredictionControls, { ...props, form, controls, t })
   ctx.slots.inject('conversation.input.overlay', () =>
     ctx.slots.register(
       { name: 'conversation.input.overlay', id: 'prompt-ghost', order: 4 },
       GhostEntry,
+    ),
+  )
+  ctx.slots.inject('conversation.input.right', () =>
+    ctx.slots.register(
+      { name: 'conversation.input.right', id: 'prompt-suggestion-controls', order: 24 },
+      ControlsEntry,
     ),
   )
   ctx.slots.inject('settings.section', () =>

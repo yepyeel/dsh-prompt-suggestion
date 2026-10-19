@@ -6,6 +6,7 @@ export interface PredictionContext {
   running: boolean
   blank: boolean
   enabled: boolean
+  automatic: boolean
 }
 export type PredictionState =
   | { kind: 'idle' | 'requesting' | 'accepted' | 'dismissed' }
@@ -48,14 +49,14 @@ export class PredictionController {
     this.active = undefined
   }
 
-  private eligible() {
+  private eligible(ignoreDismissed = false) {
     return Boolean(
       this.context?.sessionId &&
         this.context.enabled &&
         !this.context.running &&
         this.context.blank &&
         !this.composing &&
-        !this.dismissed,
+        (!this.dismissed || ignoreDismissed),
     )
   }
 
@@ -70,7 +71,7 @@ export class PredictionController {
       this.publish({ kind: 'idle' })
       return
     }
-    if (previous.enabled !== context.enabled) {
+    if (previous.enabled !== context.enabled || previous.automatic !== context.automatic) {
       this.cancel()
       this.generation += 1
       this.dismissed = false
@@ -91,9 +92,17 @@ export class PredictionController {
       this.dismiss()
       return
     }
-    if (previous.running && this.eligible()) {
+    if (previous.running && context.automatic && this.eligible()) {
       this.schedule(0, DEBOUNCE_MS)
     }
+  }
+
+  requestManual = () => {
+    if (this.state.kind === 'requesting' || !this.eligible(true)) return false
+    this.cancel()
+    this.dismissed = false
+    void this.run(0)
+    return true
   }
 
   startComposition = () => {
