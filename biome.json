@@ -12,8 +12,7 @@
       "scripts/**",
       "*.json",
       "vitest.config.ts",
-      "!!index.js",
-      "!!client.js",
+      "!!build",
       "!!pnpm-lock.yaml"
     ]
   },

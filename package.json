@@ -21,14 +21,13 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build:check && pnpm test:package"
   },
   "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",
+    ".": "./build/index.js",
+    "./client": "./build/client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
-    "index.js",
-    "client.js",
+    "build/",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg"

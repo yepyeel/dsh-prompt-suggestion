@@ -2,7 +2,7 @@
 
 ## 运行与分发边界
 
-DSH 加载根目录 `index.js`（Host ESM）和 `client.js`（Client classic bundle）。两者均由 `scripts/build.mjs` 从 `src/` 构建并提交，供 GitHub 安装直接使用。`package.json` 的 exports、files、bundle patch 与 Client 声明保持这些入口。
+DSH 通过 `package.json` 的 `exports["."]` 加载 `build/index.js`（Host ESM），通过 `exports["./client"]` 加载 `build/client.js`（Client classic bundle），不要求产物位于仓库根目录。两者均由 `scripts/build.mjs` 从 `src/` 构建并提交，`files` 包含 `build/`，供 GitHub 安装直接使用。bundle patch 与 Client 声明保持不变，不依赖安装时执行 prepare 或下载开发工具。
 
 Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` 留作外部模块，由 DSH 提供；不打包第二份 React，也不导入 Harness 内部 Client 包。TypeScript、React 测试依赖、Vitest、jsdom 和 Biome 均为开发依赖。
 

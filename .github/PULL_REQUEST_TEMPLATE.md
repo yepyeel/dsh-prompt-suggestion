@@ -12,7 +12,7 @@ Closes #
 
 - [ ] `pnpm build`
 - [ ] `pnpm check`
-- [ ] `index.js` / `client.js` 是从 `src/` 重新构建的
+- [ ] `build/index.js` / `build/client.js` 是从 `src/` 重新构建并提交的
 - [ ] 构建产物比对及只安装运行时依赖的安装包检查通过
 - [ ] 安装/启用后 Host 无报错
 - [ ] 设置页可以读取并保存

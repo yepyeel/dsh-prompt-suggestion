@@ -28,7 +28,7 @@ pnpm test:watch    # 按测试文件或过滤条件迭代
 pnpm lint:fix      # 格式与可安全修复的检查
 ```
 
-源码位于 src/host、src/client 和 src/shared。根目录 index.js 与 client.js 是 DSH 构建产物，不能直接编辑。提交时运行 pnpm build 并同时提交两端产物；build:check 在内存中比对，不改写文件。
+源码位于 src/host、src/client 和 src/shared。build/index.js 与 build/client.js 是 DSH 构建产物，不能直接编辑。提交时运行 pnpm build 并同时提交两端产物；build:check 在内存中比对，不改写文件。build/ 必须保留在 Git 中，package.json 的 exports 和 files 指向这些产物，保证从 GitHub 安装时无需用户构建。
 
 本地目录通过 DSH 插件页以 link 方式安装。构建后停用再启用；Host 改动也可重启 DSH，Client 缓存或样式未更新时刷新页面。watch 负责构建，宿主负责重载。
 
