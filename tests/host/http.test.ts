@@ -36,6 +36,51 @@ describe('Host HTTP boundary', () => {
     )
   })
 
+  it.each(['NO_SUGGESTION', '', '请继续吧！'])(
+    'returns a normal empty candidate for model output %j',
+    async (text) => {
+      fixture.ctx.llm.stream = async function* () {
+        yield { type: 'text-delta', text }
+        yield { type: 'finish', reason: { kind: 'completed' } }
+      }
+      const response = await post({ sessionId: 'ready' })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ suggestion: null, model: 'fixture/test-model' })
+      expect(fixture.ctx.logger?.debug).not.toHaveBeenCalled()
+    },
+  )
+
+  it('filters duplicates outside the transmitted context even with a custom prompt', async () => {
+    fixture.config.maxContextMessages = 2
+    fixture.config.systemPrompt = 'custom prompt'
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: '请先补齐回归测试。' }] },
+      { role: 'assistant', content: [{ type: 'text', text: '已经补齐' }] },
+      { role: 'user', content: [{ type: 'text', text: '现在修复取消逻辑' }] },
+      { role: 'assistant', content: [{ type: 'text', text: '修复完成' }] },
+    ]
+    fixture.sessions.set('ready', sampleSession({ deriveMessages: () => messages }))
+    const stream = vi.fn(async function* () {
+      yield { type: 'text-delta', text: '请先补齐回归测试' }
+    })
+    fixture.ctx.llm.stream = stream
+    expect(await (await post({ sessionId: 'ready' })).json()).toEqual({
+      suggestion: null,
+      model: 'fixture/test-model',
+    })
+    expect(stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: 'custom prompt',
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: expect.not.stringContaining('请先补齐回归测试') }],
+          },
+        ],
+      }),
+    )
+  })
+
   it('rejects unsupported methods, cross-origin calls, malformed JSON, and missing IDs', async () => {
     expect((await fetch(`${origin}/prompt-suggestion/suggest`)).status).toBe(405)
     expect((await post({}, { origin: 'https://example.invalid' })).status).toBe(403)

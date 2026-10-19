@@ -50,7 +50,10 @@ export function createSuggestionService(
         if (controller.signal.aborted) return { suggestion: null, reason: 'model-error' }
         if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
           return { suggestion: null, reason: 'stale-turn' }
-        return { suggestion: parseSuggestion(raw), model: `${model.provider}/${model.model}` }
+        return {
+          suggestion: parseSuggestion(raw, messages),
+          model: `${model.provider}/${model.model}`,
+        }
       } catch {
         const reason = timedOut ? 'timeout' : signal.aborted ? 'cancelled' : 'upstream-error'
         // Reasons and timing only: no transcript, model output, or credentials.

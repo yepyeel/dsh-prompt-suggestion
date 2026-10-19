@@ -2,14 +2,16 @@
 
 // src/shared/defaults.ts
 var DEFAULT_PROMPT = `你是一个输入预测器。下面是用户与编码 Agent 的对话记录。
-请预测用户接下来最可能输入的一条消息。
+只在对话提供足够依据时，预测用户接下来最可能输入的一条具体、有价值的消息。
 
 规则：
-- 只输出这一条消息本身，不要解释、不要引号、不要编号。
+- 如果上下文不足、无法确定具体的下一步，或任务已结束且没有明确后续，只输出 NO_SUGGESTION。这是正常结果，不必强行给出建议。
+- 有建议时只输出这一条消息本身，不要解释、不要引号、不要编号。
 - 使用对话的主语言。
 - 不超过 70 个汉字，或 40 个英文单词。
 - 具体、可执行，优先“推进当前任务”的下一步动作。
-- 如果助手最后一句是在向用户提问，直接给出用户最可能的回答。
+- 如果助手最后一句是在向用户提问，且对话足以推断回答，可以输出该回答；无法推断时输出 NO_SUGGESTION。
+- 不要给出泛泛的“继续”“请继续”“continue”或“go ahead”；没有具体动作时输出 NO_SUGGESTION。
 - 不要重复对话中已经出现过的用户消息。`;
 var SETTINGS_NS = "prompt-suggestion";
 var ROUTE = "/prompt-suggestion/suggest";
@@ -146,13 +148,26 @@ function buildTranscript(messages, maxMessages = 16) {
   }
   return [...kept].sort((a, b) => a - b).map((index) => lines[index]).join("\n\n");
 }
-function parseSuggestion(raw) {
+function comparable(text) {
+  return text.normalize("NFKC").trim().replace(/\s+/gu, " ").replace(/^["'“”‘’`]+|["'“”‘’`]+$/gu, "").replace(/[.!?。！？]+$/u, "").trim().toLowerCase();
+}
+function isGenericContinuation(text) {
+  const compact = text.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
+  return /^(?:好的?|可以)?请?继续(?:吧|下去|进行|执行|处理|下一步)?$/u.test(compact) || /^(?:ok(?:ay)?|sure|yes)?(?:please)?(?:continue|proceed|goahead|keepgoing)(?:please)?$/.test(
+    compact
+  );
+}
+function parseSuggestion(raw, messages = []) {
   if (typeof raw !== "string") return null;
   if (raw.includes("```")) return null;
   const line = raw.split(/\r?\n/).map((part) => part.trim()).find(Boolean);
   if (!line) return null;
   const text = line.replace(/^[-*•]\s+/, "").replace(/^\d+[.)、]\s+/, "").replace(/^["'“”‘’`]+/, "").replace(/["'“”‘’`]+$/, "").trim();
   if (!text || text.length > 200) return null;
+  const key = comparable(text);
+  if (key === "no_suggestion" || key === "null" || isGenericContinuation(text)) return null;
+  if (messages.some((message) => message?.role === "user" && comparable(textOf(message)) === key))
+    return null;
   return text;
 }
 function pickModel(ctx, session, settings) {
@@ -257,7 +272,10 @@ function createSuggestionService(ctx) {
         if (controller.signal.aborted) return { suggestion: null, reason: "model-error" };
         if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
           return { suggestion: null, reason: "stale-turn" };
-        return { suggestion: parseSuggestion(raw), model: `${model.provider}/${model.model}` };
+        return {
+          suggestion: parseSuggestion(raw, messages),
+          model: `${model.provider}/${model.model}`
+        };
       } catch {
         const reason = timedOut ? "timeout" : signal.aborted ? "cancelled" : "upstream-error";
         ctx.logger?.debug("[prompt-suggestion] %s (%d ms)", reason, Date.now() - started);
