@@ -1,6 +1,7 @@
 export const zh = {
   title: '输入预测',
-  description: '每轮回复结束后，在输入框里以灰色文本提示你的下一句话。按 Tab 或 → 填入，不会自动发送。',
+  description:
+    '每轮回复结束后，在输入框里以灰色文本提示你的下一句话。按 Tab 或 → 填入，不会自动发送。',
   enabled: '启用输入预测',
   enabledHint: '关闭后不再请求预测，输入框不会出现提示。',
   model: '预测模型',
@@ -27,16 +28,19 @@ export const zh = {
 
 export const en = {
   title: 'Prompt suggestion',
-  description: 'After each reply, a gray prediction appears in the composer. Press Tab or → to use it; it never sends.',
+  description:
+    'After each reply, a gray prediction appears in the composer. Press Tab or → to use it; it never sends.',
   enabled: 'Enable predictions',
   enabledHint: 'Off: no prediction is requested and nothing appears in the composer.',
   model: 'Prediction model',
-  modelHint: 'Leave empty to follow the model of the current session, or pin a cheaper and faster one.',
+  modelHint:
+    'Leave empty to follow the model of the current session, or pin a cheaper and faster one.',
   followSession: 'Follow the current session (default)',
   provider: 'Provider',
   modelId: 'Model',
   context: 'Context messages',
-  contextHint: 'How many recent messages reach the model, 2–64. More is more accurate and more expensive.',
+  contextHint:
+    'How many recent messages reach the model, 2–64. More is more accurate and more expensive.',
   invalidContext: 'Enter an integer from 2 to 64.',
   prompt: 'System prompt',
   promptHint: 'Sets the tone, length, and direction of the prediction. Applies from the next turn.',
@@ -51,3 +55,5 @@ export const en = {
   unavailable: 'This plugin is not loaded, so it cannot be configured right now.',
   loading: 'Reading settings…',
 }
+
+export type LocaleKey = keyof typeof en

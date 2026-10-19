@@ -125,39 +125,32 @@ pnpm build
 ## 实现概览
 
 - **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`；`GET /prompt-suggestion/models` 汇总可用模型。
-- **Client**：源码按职责拆在 `client/`（`ghost.js`、`settings.js`、`components/`、`styles/` 等），由 esbuild 打成 DSH 加载的 classic bundle `client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
+- **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
 - **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
 - **失败降级**：超时、限流、解析失败一律静默返回空，不影响正常输入。
 
 ## 项目结构
 
 ```text
-.
-├── client/                     # Client 源码（ESM，按职责拆分）
-│   ├── entry.cjs               # bundle 入口：CJS 导出 apply / inject
-│   ├── index.js                # 只负责 slots / locale / configForms 注册
-│   ├── constants.js            # 端点、超时、selector、命名空间
-│   ├── locales.js              # zh / en 设置页文案
-│   ├── ghost.js                # 输入框 ghost 预测
-│   ├── settings.js             # 设置页
-│   ├── components/
-│   │   └── dropdown-select.js  # 自定义模型下拉
-│   └── styles/
-│       ├── ghost.js            # GHOST_CSS
-│       └── settings.js         # SETTINGS_CSS
-├── scripts/
-│   └── build-client.mjs        # esbuild 构建 client.js
-├── locale/                     # 插件元信息 zh / en
-├── index.js                    # Host 半部
-├── client.js                   # 构建产物，勿直接编辑
-├── cordis.patch.yml
-├── icon.svg
-└── package.json
+src/
+├── host/                      # DSH 注册、HTTP、预测规则、模型目录
+├── shared/                    # 接口契约、设置默认值、超时预算
+└── client/
+    ├── ghost/                 # 预测状态控制、React hook、展示
+    ├── settings/              # 设置逻辑与 TSX 页面
+    ├── dsh/                   # 宿主接口类型与 DOM 兼容适配
+    ├── components/            # 通用界面组件
+    ├── styles/                # 插件 CSS
+    └── index.ts               # slots / locale / configForms 注册
+scripts/                       # 双端构建、安装包验证
+tests/                        # 规则、HTTP、异步状态与 DOM 交互测试
+index.js                       # 生成的 Host ESM bundle
+client.js                      # 生成的 Client classic bundle
 ```
 
-`client.js` 由 `client/` 构建生成；DSH 只加载这个 classic bundle，因此提交时两者必须保持同步。
+`index.js` 和 `client.js` 都由 `src/` 构建生成并提交到 Git。DSH 和从 GitHub 安装的用户直接加载这两个文件，不需要 TypeScript 或开发工具。运行时依赖仍只有 `@deepseek-ai/schemastery`；React 由 DSH 提供。
 
-更完整的设计与取舍见 [DESIGN.md](./DESIGN.md)。
+当前架构、生命周期和兼容约束见 [DESIGN.md](./DESIGN.md)。
 
 ## 已知限制
 
@@ -168,16 +161,30 @@ pnpm build
 
 ## 开发
 
+要求 Node.js 22.12+（推荐 `.node-version` 的 Node.js 24）和 pnpm 11.25.0。pnpm 版本由 `packageManager` 固定。
+
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 pnpm check
 ```
 
-`client.js` 是构建产物，源码在 `client/`；改完源码后运行 `pnpm build` 重新生成，不要直接编辑 `client.js`。
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm dev` | 监听 Host / Client 源码并重新生成两个 bundle |
+| `pnpm typecheck` | TypeScript 严格类型检查 |
+| `pnpm lint` / `pnpm lint:fix` | Biome 静态检查与格式化 |
+| `pnpm test` / `pnpm test:watch` | Vitest 行为测试与交互测试 |
+| `pnpm build:check` | 在内存中重建并核对产物，不改写文件 |
+| `pnpm test:package` | 打包、只安装运行时依赖，验证 Host 导出及 Client 加载协议 |
+| `pnpm check` | 顺序运行类型、静态检查、测试、产物一致性及安装包验证 |
 
-- Host 改动：在插件列表里停用再启用，或重启 DSH。
-- Client 改动：构建后同样停用/启用；样式没更新时刷新页面。
+源码在 `src/`；不要直接编辑根目录的生成文件。改动后运行 `pnpm build` 并提交两端产物。GitHub Actions 在 Node.js 22 / 24 上执行冻结安装与 `pnpm check`。
+
+- Host 改动：构建后重启 DSH，或在插件列表停用再启用。
+- Client 改动：构建后重新启用插件；必要时刷新页面。`pnpm dev` 负责重建，宿主重载仍由 DSH 管理。
+- 单元和 DOM 测试使用受控的模型与宿主接口，不需要 API key；`test:package` 需要 npm registry 访问以安装运行时依赖。
+- 真实模型预测、宿主界面的明暗主题和视觉对齐仍需在 DSH 中人工验收；DOM 测试不能替代这些检查。
 
 贡献流程与 PR 规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 

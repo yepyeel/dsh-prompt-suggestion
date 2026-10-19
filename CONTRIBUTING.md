@@ -2,61 +2,61 @@
 
 ## 开始之前
 
-- 文档、样式微调这类小改动可以直接提 PR。
+- 文档、样式微调可以直接提 PR。
 - 行为变化、新设置项、新运行时依赖，先开 Issue 说明动机和取舍，再动手。
-- 安全问题请不要开公开 Issue，私下联系维护者。
+- 安全问题请私下联系维护者。
 
 ## 本地环境
 
-- Node.js 22+
-- pnpm 11+
-- 一个可运行的 DSH（Desktop 或 `dsh --profile web`）
+- Node.js 22.12+，推荐 `.node-version` 的 Node.js 24。
+- pnpm 11.25.0，由 package.json 的 packageManager 固定。
+- 进行实际插件验收时需要 DSH Desktop 或 `dsh web`。
 
 ```bash
-git clone https://github.com/yepyeel/dsh-prompt-suggestion.git
-cd dsh-prompt-suggestion
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 pnpm check
 ```
 
-`client.js` 是由 `client/` 下的模块构建出来的 DSH classic bundle，不要直接编辑；改完 `client/` 后执行 `pnpm build`，并把生成的 `client.js` 一起提交。
+`pnpm check` 依次执行 TypeScript、Biome、Vitest、构建产物比对与安装包检查。单元和 DOM 测试无需模型 API key。安装包检查会在临时目录仅安装运行时依赖，需要访问 npm registry。
 
-安装到 DSH 后：
+## 日常开发
 
-- Host / Client 改动通过“停用 → 启用”插件生效。
-- 如果客户端样式没有更新，刷新一次页面。
+```bash
+pnpm dev           # 监听双端 TypeScript / TSX 源码并重建
+pnpm test:watch    # 按测试文件或过滤条件迭代
+pnpm lint:fix      # 格式与可安全修复的检查
+```
 
-## 分支与提交
+源码位于 src/host、src/client 和 src/shared。根目录 index.js 与 client.js 是 DSH 构建产物，不能直接编辑。提交时运行 pnpm build 并同时提交两端产物；build:check 在内存中比对，不改写文件。
 
-- 分支命名：`feat/<topic>`、`fix/<topic>`、`docs/<topic>`、`chore/<topic>`
-- 提交信息使用 Conventional Commits：
-  - `feat: add model override`
-  - `fix: keep ghost aligned after resize`
-  - `docs: clarify install steps`
-- 一个 commit 只做一件事；subject 不超过 72 字符。
+本地目录通过 DSH 插件页以 link 方式安装。构建后停用再启用；Host 改动也可重启 DSH，Client 缓存或样式未更新时刷新页面。watch 负责构建，宿主负责重载。
 
-## 代码约定
+## 代码边界
 
-- **不要 `require` Harness 内部 Client 包**（例如 `@deepseek-ai/dsh-client-ui-primitives`）。需要官方样式时，复刻它的标记和 CSS，并改用本插件的类名前缀。
-- 新增设置字段必须声明 `.volatile()`，否则不会进入设置文档。
-- 设置值在 `apply` 里是 accessor 而不是值，必须在每次请求时现读，不要在启动时快照。
-- 不要向 Session 追加自定义事件；不要把预测结果注入模型上下文。
-- 新增运行时依赖需要在 PR 里说明理由和体积影响；目前只有 `@deepseek-ai/schemastery`。
-- 新增界面文案时同时补 `zh` / `en` 两份字典。
-- Client 代码按职责放在 `client/`：`ghost.js`（输入框预测）、`settings.js`（设置页）、`components/`（通用组件）、`styles/`（CSS 字符串）、`locales.js`、`constants.js`；`client/index.js` 只做注册，`client/entry.cjs` 只做 bundle 的 CJS 导出适配。
+- host/index.ts 和 client/index.ts 只负责 DSH 注册。业务规则、HTTP、状态控制与 DOM 适配分别放入对应模块。
+- 配置和接口使用 shared 契约与默认值；浏览器不能引入 Node-only 或 Host 模块。
+- DSH 接口子集放在各自的 dsh 模块中。优先使用公共接口，不要 require Harness 内部 Client 包。
+- 不把 React 打进 Client bundle；由 DSH 提供。新增运行时依赖需说明体积与兼容影响。
+- 设置字段声明 volatile，在每次请求现读 accessor；不能在 apply 中保存快照。
+- 预测控制器不依赖 React、DOM 或真实模型；回包检查会话、回合与请求身份，计时器和监听器必须可清理。
+- HTTP 校验与未知异常集中处理。正常失败静默降级，诊断只记原因与耗时，不记会话内容或凭据。
+- 不向 Session 写入预测或自定义事件，不将预测注入模型上下文。
+- 界面文案同时维护 src/client/locales.ts 中的 zh / en 字典。
 
-## PR 要求
+## 测试与验收
 
-- 一个 PR 只解决一个问题，描述里写清背景和取舍。
-- 关联 Issue（例如 `Closes #123`）。
-- 必须通过：`pnpm build && pnpm check`，且 `client.js` 与 `client/` 源码保持同步。
-- UI 改动附截图或录屏，尽量覆盖明暗主题。
-- 行为改动同步更新 `README.md` 与 `DESIGN.md`。
-- 不要提交 `node_modules/`、`.DS_Store`、`.scratch/`。
-- 合并方式为 squash merge，保持主干线性。
+修复问题时优先增加复现行为测试，使用受控模型流与宿主接口。测试放在 tests/host 或 tests/client；键盘与设置交互用 React + jsdom，取消/超时用 fake timers。
 
-## Review
+DSH classic loader 的 apply/inject 形态、公开 exports、files 与 GitHub 免构建安装都属于兼容契约。拆模块后必须通过 test:package。CI 在 Node.js 22 / 24 上执行 pnpm check。
 
-- 维护者会重点检查：是否破坏已有安装、设置是否真的热更新、预测失败是否静默降级。
-- 收到修改意见后直接在原分支追加 commit，不需要重开 PR。
+实际宿主验收包括：插件启用无错误、设置保存与恢复、ghost 显示、Tab/→ 填入不发送、Esc 和 IME、会话切换、明暗主题。UI 改动附截图或录屏，明确区分实际浏览器与 jsdom 验证。
+
+## 分支与 PR
+
+- 分支使用 feat/、fix/、refactor/、chore/ 或 docs/。
+- 提交遵循 Conventional Commits，subject 不超过 72 字符。
+- 一个 PR 解决一个问题，说明行为、兼容范围与实际验证，关联已有 Issue。
+- 行为或结构变更同步更新 README / DESIGN。
+- 不提交 node_modules、coverage、.scratch 或本地凭据。
+- 默认 squash merge；收到反馈后在原 PR 分支继续提交。
