@@ -31,14 +31,52 @@ describe('transcript budget', () => {
     expect(
       buildTranscript(
         [
-          message('user', 'old'),
+          message('assistant', 'old'),
+          message('user', 'current request'),
           message('tool', 'line one\n   line two'),
           message('assistant', 'done'),
         ],
-        2,
+        3,
       ),
-    ).toBe('工具: [工具结果] line one line two\n\n助手: done')
+    ).toBe('用户: current request\n\n工具: [工具结果] line one line two\n\n助手: done')
   })
+
+  it('keeps the beginning and final question of a long reply, with an explicit omission', () => {
+    const transcript = buildTranscript([
+      message('user', `请保留兼容性。${'需求细节'.repeat(300)}最后，请先补回归测试。`),
+      message('assistant', `已经完成修复。${'中间分析'.repeat(300)}结论：测试已通过。需要提交吗？`),
+    ])
+    expect(transcript).toContain('用户: 请保留兼容性。')
+    expect(transcript).toContain('最后，请先补回归测试。')
+    expect(transcript).toContain('助手: 已经完成修复。')
+    expect(transcript).toContain('…[中间内容已省略]…')
+    expect(transcript).toMatch(/结论：测试已通过。需要提交吗？$/)
+    expect(transcript).not.toContain('中间分析'.repeat(200))
+  })
+
+  it.each([2, 16, 64])(
+    'reserves the latest request and reply within a %i-message budget',
+    (limit) => {
+      const transcript = buildTranscript(
+        [
+          message('user', 'old request'),
+          message('assistant', 'old reply'),
+          message('user', '当前需求：修复取消逻辑'),
+          ...Array.from({ length: 70 }, (_, index) =>
+            message('tool', `${index}: ${'x'.repeat(300)}`),
+          ),
+          message('assistant', '修复完成，需要继续测试吗？'),
+        ],
+        limit,
+      )
+      expect(transcript).toMatch(/^用户: 当前需求：修复取消逻辑/)
+      expect(transcript).toMatch(/助手: 修复完成，需要继续测试吗？$/)
+      expect(transcript).not.toContain('old request')
+      expect(transcript).not.toContain('old reply')
+      expect(transcript.split('\n\n').length).toBeLessThanOrEqual(limit)
+      expect(transcript.length).toBeLessThanOrEqual(7_000)
+    },
+  )
 
   it('bounds individual messages and total context', () => {
     const messages = Array.from({ length: 30 }, (_, index) =>
@@ -47,7 +85,7 @@ describe('transcript budget', () => {
     const transcript = buildTranscript(messages, 64)
     expect(transcript).toContain('29:')
     expect(transcript).not.toContain('用户: 0:')
-    expect(transcript.length).toBeLessThan(7_100)
+    expect(transcript.length).toBeLessThanOrEqual(7_000)
     expect(transcript.split('\n\n').every((line) => line.length <= 705)).toBe(true)
   })
 })

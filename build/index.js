@@ -106,26 +106,45 @@ function textOf(message) {
   }
   return parts.join("\n");
 }
+function abbreviate(text) {
+  if (text.length <= MESSAGE_CHARS) return text;
+  const marker = "\n…[中间内容已省略]…\n";
+  const head = Math.ceil((MESSAGE_CHARS - marker.length) / 2);
+  const tail = MESSAGE_CHARS - marker.length - head;
+  return `${text.slice(0, head)}${marker}${text.slice(-tail)}`;
+}
 function buildTranscript(messages, maxMessages = 16) {
   const lines = [];
+  let latestUser = -1;
+  let latestAssistant = -1;
   for (const message of messages) {
     if (!message || message.role === "system" || message.role === "developer") continue;
     let text = textOf(message).trim();
     if (!text) continue;
     if (message.role === "tool") text = `[工具结果] ${text.replace(/\s+/g, " ").slice(0, 160)}`;
-    if (text.length > MESSAGE_CHARS) text = `${text.slice(0, MESSAGE_CHARS)}…`;
+    text = abbreviate(text);
     const label = message.role === "user" ? "用户" : message.role === "assistant" ? "助手" : "工具";
+    if (message.role === "user") latestUser = lines.length;
+    if (message.role === "assistant") latestAssistant = lines.length;
     lines.push(`${label}: ${text}`);
   }
-  const kept = [];
+  const kept = /* @__PURE__ */ new Set();
   let total = 0;
+  const keep = (index) => {
+    if (kept.has(index)) return true;
+    if (index < 0 || kept.size >= maxMessages) return false;
+    const size = lines[index].length + (kept.size ? 2 : 0);
+    if (total + size > CONTEXT_CHARS) return false;
+    kept.add(index);
+    total += size;
+    return true;
+  };
+  keep(latestUser);
+  keep(latestAssistant);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
-    if (kept.length >= maxMessages || total + line.length > CONTEXT_CHARS) break;
-    kept.unshift(line);
-    total += line.length;
+    if (!keep(index)) break;
   }
-  return kept.join("\n\n");
+  return [...kept].sort((a, b) => a - b).map((index) => lines[index]).join("\n\n");
 }
 function parseSuggestion(raw) {
   if (typeof raw !== "string") return null;
