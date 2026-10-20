@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-prompt-suggestion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Predicts the next message as gray ghost text in the composer, with a settings page for prompt and model.",
   "type": "module",
