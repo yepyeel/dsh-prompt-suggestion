@@ -211,6 +211,55 @@ var init_commands = __esm({
   }
 });
 
+// src/client/styles/ghost.ts
+var GHOST_CSS;
+var init_ghost = __esm({
+  "src/client/styles/ghost.ts"() {
+    "use strict";
+    GHOST_CSS = `
+      .dsh-ps-root {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 0;
+        pointer-events: none;
+        z-index: 6;
+      }
+      .dsh-ps-ghost {
+        position: absolute;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .dsh-ps-text {
+        min-width: 0;
+        overflow: hidden;
+        opacity: .9;
+      }
+      .dsh-ps-keyWrap {
+        flex: none;
+        display: flex;
+        align-items: center;
+      }
+      .dsh-ps-key {
+        display: inline-block;
+        font-family: var(--ds-font-family-code);
+        font-size: 10px;
+        line-height: 14px;
+        padding: 0 4px;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        opacity: .45;
+      }
+    `;
+  }
+});
+
 // src/client/dsh/composer.ts
 function findComposer(node) {
   let current = node;
@@ -308,136 +357,10 @@ var init_composer = __esm({
   }
 });
 
-// src/client/styles/controls.ts
-var CONTROLS_CSS;
-var init_controls = __esm({
-  "src/client/styles/controls.ts"() {
-    "use strict";
-    CONTROLS_CSS = `
-  .dsh-ps-controls { display: flex; align-items: center; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
-  .dsh-ps-controls button {
-    color: inherit;
-    background: transparent;
-    border: 1px solid currentColor;
-    border-radius: 6px;
-    padding: 3px 6px;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .dsh-ps-controls button[aria-pressed="false"] { opacity: .65; }
-  .dsh-ps-controls button:disabled { opacity: .35; cursor: default; }
-  .dsh-ps-controls button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-`;
-  }
-});
-
-// src/client/ghost/prediction-controls.tsx
-function PredictionControls({
-  form,
-  controls,
-  t,
-  sessionId,
-  useInput,
-  useSession
-}) {
-  const settings = (0, import_react.useSyncExternalStore)(
-    (listener) => form.subscribe(listener),
-    () => form.getSnapshot()
-  );
-  const automatic = (0, import_react.useSyncExternalStore)(controls.subscribe, () => controls.getAutomatic(sessionId));
-  const input = useInput((snapshot) => snapshot);
-  const running = useSession((snapshot) => snapshot?.running === true);
-  const blank = Boolean(input) && !input?.draft?.trim() && !input?.attachmentIds?.length;
-  if (!sessionId || settings.status !== "ready" || settings.value?.enabled === false) return null;
-  return /* @__PURE__ */ React.createElement("fieldset", { className: "dsh-ps-controls", "aria-label": t("sessionControls") }, /* @__PURE__ */ React.createElement("style", null, CONTROLS_CSS), /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      type: "button",
-      "aria-pressed": automatic,
-      title: t(automatic ? "pauseAutomatic" : "resumeAutomatic"),
-      onClick: () => controls.setAutomatic(sessionId, !automatic)
-    },
-    t(automatic ? "automaticOn" : "automaticOff")
-  ), /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      type: "button",
-      disabled: running || !blank,
-      title: `${t("generateSuggestion")} (Alt+Shift+P)`,
-      onClick: (event) => {
-        if (controls.requestManual(sessionId)) {
-          findComposer(event.currentTarget)?.querySelector('[contenteditable="true"]')?.focus();
-        }
-      }
-    },
-    t("generateSuggestion")
-  ));
-}
-var React, import_react;
-var init_prediction_controls = __esm({
-  "src/client/ghost/prediction-controls.tsx"() {
-    "use strict";
-    React = __toESM(require("react"), 1);
-    import_react = require("react");
-    init_composer();
-    init_controls();
-  }
-});
-
-// src/client/styles/ghost.ts
-var GHOST_CSS;
-var init_ghost = __esm({
-  "src/client/styles/ghost.ts"() {
-    "use strict";
-    GHOST_CSS = `
-      .dsh-ps-root {
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 0;
-        height: 0;
-        pointer-events: none;
-        z-index: 6;
-      }
-      .dsh-ps-ghost {
-        position: absolute;
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        min-width: 0;
-        overflow: hidden;
-        white-space: nowrap;
-        pointer-events: none;
-      }
-      .dsh-ps-text {
-        min-width: 0;
-        overflow: hidden;
-        opacity: .9;
-      }
-      .dsh-ps-keyWrap {
-        flex: none;
-        display: flex;
-        align-items: center;
-      }
-      .dsh-ps-key {
-        display: inline-block;
-        font-family: var(--ds-font-family-code);
-        font-size: 10px;
-        line-height: 14px;
-        padding: 0 4px;
-        border: 1px solid currentColor;
-        border-radius: 4px;
-        opacity: .45;
-      }
-    `;
-  }
-});
-
 // src/client/ghost/use-composer.ts
 function useComposer(root, shown, sessionId, controller, accept) {
-  const [box, setBox] = (0, import_react2.useState)(null);
-  (0, import_react2.useLayoutEffect)(() => {
+  const [box, setBox] = (0, import_react.useState)(null);
+  (0, import_react.useLayoutEffect)(() => {
     if (!root.current || !sessionId) return;
     const unlistenInput = listenComposerInput(root.current, controller);
     const unlistenShortcut = listenPredictionShortcut(root.current, controller.requestManual);
@@ -446,7 +369,7 @@ function useComposer(root, shown, sessionId, controller, accept) {
       unlistenShortcut();
     };
   }, [root, sessionId, controller]);
-  (0, import_react2.useLayoutEffect)(() => {
+  (0, import_react.useLayoutEffect)(() => {
     const node = root.current;
     if (!shown || !node || !sessionId) {
       setBox(null);
@@ -478,11 +401,11 @@ function useComposer(root, shown, sessionId, controller, accept) {
   }, [root, shown, sessionId, controller, accept]);
   return box;
 }
-var import_react2;
+var import_react;
 var init_use_composer = __esm({
   "src/client/ghost/use-composer.ts"() {
     "use strict";
-    import_react2 = require("react");
+    import_react = require("react");
     init_composer();
   }
 });
@@ -738,23 +661,23 @@ function usePrediction({ useInput, useSession, sessionId }, { enabled = true, au
   const input = useInput((snapshot) => snapshot);
   const running = useSession((snapshot) => snapshot?.running === true);
   const blank = Boolean(input) && !input?.draft?.trim() && !input?.attachmentIds?.length;
-  const [controller] = (0, import_react3.useState)(() => new PredictionController(api.suggest));
-  const state = (0, import_react3.useSyncExternalStore)(controller.subscribe, controller.getSnapshot);
-  (0, import_react3.useLayoutEffect)(() => {
+  const [controller] = (0, import_react2.useState)(() => new PredictionController(api.suggest));
+  const state = (0, import_react2.useSyncExternalStore)(controller.subscribe, controller.getSnapshot);
+  (0, import_react2.useLayoutEffect)(() => {
     controller.update({ sessionId, running, blank, enabled, automatic });
   }, [controller, sessionId, running, blank, enabled, automatic]);
-  (0, import_react3.useLayoutEffect)(() => {
+  (0, import_react2.useLayoutEffect)(() => {
     if (!sessionId) return;
     return controls?.registerManual(sessionId, controller.requestManual);
   }, [controls, controller, sessionId]);
-  (0, import_react3.useLayoutEffect)(() => () => controller.dispose(), [controller]);
+  (0, import_react2.useLayoutEffect)(() => () => controller.dispose(), [controller]);
   return { state, controller };
 }
-var import_react3;
+var import_react2;
 var init_use_prediction = __esm({
   "src/client/ghost/use-prediction.ts"() {
     "use strict";
-    import_react3 = require("react");
+    import_react2 = require("react");
     init_api();
     init_controller();
   }
@@ -766,21 +689,21 @@ function ConfiguredPromptGhost({
   controls,
   ...props
 }) {
-  const snapshot = (0, import_react4.useSyncExternalStore)(
+  const snapshot = (0, import_react3.useSyncExternalStore)(
     (listener) => form.subscribe(listener),
     () => form.getSnapshot()
   );
   const enabled = snapshot.status === "ready" && snapshot.value?.enabled !== false;
-  const automatic = (0, import_react4.useSyncExternalStore)(
+  const automatic = (0, import_react3.useSyncExternalStore)(
     controls.subscribe,
     () => controls.getAutomatic(props.sessionId)
   );
-  return /* @__PURE__ */ React2.createElement(PromptGhost, { ...props, enabled, automatic, controls });
+  return /* @__PURE__ */ React.createElement(PromptGhost, { ...props, enabled, automatic, controls });
 }
 function PromptGhost(props) {
-  const root = (0, import_react4.useRef)(null);
+  const root = (0, import_react3.useRef)(null);
   const { state, controller } = usePrediction(props, props);
-  const accept = (0, import_react4.useCallback)(() => {
+  const accept = (0, import_react3.useCallback)(() => {
     controller.accept((text) => {
       const span = props.inputActions.captureInsertion();
       return props.inputActions.insertText(text, span);
@@ -788,7 +711,7 @@ function PromptGhost(props) {
   }, [controller, props.inputActions]);
   const shown = state.kind === "shown";
   const box = useComposer(root, shown, props.sessionId, controller, accept);
-  return /* @__PURE__ */ React2.createElement("div", { ref: root, className: "dsh-ps-root" }, /* @__PURE__ */ React2.createElement("style", null, GHOST_CSS), state.kind === "shown" && box && /* @__PURE__ */ React2.createElement(
+  return /* @__PURE__ */ React.createElement("div", { ref: root, className: "dsh-ps-root" }, /* @__PURE__ */ React.createElement("style", null, GHOST_CSS), state.kind === "shown" && box && /* @__PURE__ */ React.createElement(
     "div",
     {
       className: "dsh-ps-ghost",
@@ -803,7 +726,7 @@ function PromptGhost(props) {
         color: box.color
       }
     },
-    /* @__PURE__ */ React2.createElement(
+    /* @__PURE__ */ React.createElement(
       "span",
       {
         className: "dsh-ps-text",
@@ -818,15 +741,15 @@ function PromptGhost(props) {
       },
       state.text
     ),
-    /* @__PURE__ */ React2.createElement("span", { className: "dsh-ps-keyWrap", style: { height: box.lineHeightPx } }, /* @__PURE__ */ React2.createElement("span", { className: "dsh-ps-key" }, "Tab"))
+    /* @__PURE__ */ React.createElement("span", { className: "dsh-ps-keyWrap", style: { height: box.lineHeightPx } }, /* @__PURE__ */ React.createElement("span", { className: "dsh-ps-key" }, "Tab"))
   ));
 }
-var React2, import_react4;
+var React, import_react3;
 var init_prompt_ghost = __esm({
   "src/client/ghost/prompt-ghost.tsx"() {
     "use strict";
-    React2 = __toESM(require("react"), 1);
-    import_react4 = require("react");
+    React = __toESM(require("react"), 1);
+    import_react3 = require("react");
     init_ghost();
     init_use_composer();
     init_use_prediction();
@@ -929,12 +852,6 @@ var init_locales = __esm({
       readOnly: "当前部署的设置为只读。",
       unavailable: "该插件当前未加载，无法配置。",
       loading: "正在读取设置…",
-      sessionControls: "本会话的输入预测",
-      automaticOn: "自动预测：开",
-      automaticOff: "自动预测：关",
-      pauseAutomatic: "关闭本会话的自动预测",
-      resumeAutomatic: "开启本会话的自动预测",
-      generateSuggestion: "生成建议",
       commandSuggest: "生成建议",
       commandSuggestDescription: "立即为当前空输入生成一次预测（等同于 Alt+Shift+P）。",
       commandAutopredict: "自动预测",
@@ -945,7 +862,7 @@ var init_locales = __esm({
       autoOptionOn: "开启",
       autoOptionOnDetail: "每轮回复结束后自动请求预测",
       autoOptionOff: "关闭",
-      autoOptionOffDetail: "只在点「生成建议」或按 Alt+Shift+P 时预测"
+      autoOptionOffDetail: "只在 /suggest 或 Alt+Shift+P 时预测"
     };
     en = {
       title: "Prompt suggestion",
@@ -972,12 +889,6 @@ var init_locales = __esm({
       readOnly: "This deployment stores settings read-only.",
       unavailable: "This plugin is not loaded, so it cannot be configured right now.",
       loading: "Reading settings…",
-      sessionControls: "Predictions for this conversation",
-      automaticOn: "Auto: on",
-      automaticOff: "Auto: off",
-      pauseAutomatic: "Pause automatic predictions for this conversation",
-      resumeAutomatic: "Resume automatic predictions for this conversation",
-      generateSuggestion: "Generate suggestion",
       commandSuggest: "Generate suggestion",
       commandSuggestDescription: "Predict once for the current empty input (same as Alt+Shift+P).",
       commandAutopredict: "Automatic predictions",
@@ -988,24 +899,24 @@ var init_locales = __esm({
       autoOptionOn: "On",
       autoOptionOnDetail: "Request a prediction after every completed reply",
       autoOptionOff: "Off",
-      autoOptionOffDetail: "Predict only from Generate suggestion or Alt+Shift+P"
+      autoOptionOffDetail: "Predict only from /suggest or Alt+Shift+P"
     };
   }
 });
 
 // src/client/components/dropdown-select.tsx
 function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
-  const [open, setOpen] = (0, import_react5.useState)(false);
-  const [active, setActive] = (0, import_react5.useState)(-1);
-  const [box, setBox] = (0, import_react5.useState)(null);
-  const root = (0, import_react5.useRef)(null);
-  const trigger = (0, import_react5.useRef)(null);
-  const menu = (0, import_react5.useRef)(null);
-  const listboxId = (0, import_react5.useId)();
+  const [open, setOpen] = (0, import_react4.useState)(false);
+  const [active, setActive] = (0, import_react4.useState)(-1);
+  const [box, setBox] = (0, import_react4.useState)(null);
+  const root = (0, import_react4.useRef)(null);
+  const trigger = (0, import_react4.useRef)(null);
+  const menu = (0, import_react4.useRef)(null);
+  const listboxId = (0, import_react4.useId)();
   const selectedIndex = options.findIndex((option) => option.value === value);
   const current = selectedIndex >= 0 ? selectedIndex : 0;
   const selected = options[current];
-  const place = (0, import_react5.useCallback)(() => {
+  const place = (0, import_react4.useCallback)(() => {
     if (!trigger.current) return;
     const rect = trigger.current.getBoundingClientRect();
     const width = Math.min(
@@ -1018,7 +929,7 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
       width
     });
   }, []);
-  const close = (0, import_react5.useCallback)((refocus = false) => {
+  const close = (0, import_react4.useCallback)((refocus = false) => {
     setOpen(false);
     setActive(-1);
     if (refocus) trigger.current?.focus();
@@ -1028,7 +939,7 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
     close(true);
     if (option && option.value !== value) onChange(option.value);
   };
-  (0, import_react5.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (!open) return;
     const pointer = (event) => {
       if (!root.current?.contains(event.target)) close();
@@ -1042,10 +953,10 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
       window.removeEventListener("scroll", place, true);
     };
   }, [open, close, place]);
-  (0, import_react5.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (open && active >= 0) menu.current?.children[active]?.scrollIntoView?.({ block: "nearest" });
   }, [open, active]);
-  (0, import_react5.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (disabled && open) close();
   }, [disabled, open, close]);
   const onKeyDown = (event) => {
@@ -1077,7 +988,7 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
       choose(active >= 0 ? active : current);
     }
   };
-  return /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-select", ref: root }, /* @__PURE__ */ React3.createElement(
+  return /* @__PURE__ */ React2.createElement("div", { className: "dsh-pset-select", ref: root }, /* @__PURE__ */ React2.createElement(
     "button",
     {
       type: "button",
@@ -1100,9 +1011,9 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
       },
       onKeyDown
     },
-    /* @__PURE__ */ React3.createElement("span", { className: "dsh-pset-selectValue" }, selected?.label ?? ""),
-    /* @__PURE__ */ React3.createElement("span", { className: "dsh-pset-selectChevron" }, selectChevron)
-  ), open && box && /* @__PURE__ */ React3.createElement(
+    /* @__PURE__ */ React2.createElement("span", { className: "dsh-pset-selectValue" }, selected?.label ?? ""),
+    /* @__PURE__ */ React2.createElement("span", { className: "dsh-pset-selectChevron" }, selectChevron)
+  ), open && box && /* @__PURE__ */ React2.createElement(
     "div",
     {
       className: "dsh-pset-selectMenu",
@@ -1114,7 +1025,7 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
       style: { top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px` },
       onKeyDown
     },
-    options.map((option, index) => /* @__PURE__ */ React3.createElement(
+    options.map((option, index) => /* @__PURE__ */ React2.createElement(
       "div",
       {
         key: option.value || "__follow__",
@@ -1132,18 +1043,18 @@ function DropdownSelect({ value, options, disabled, onChange, labelledBy }) {
         },
         tabIndex: -1
       },
-      /* @__PURE__ */ React3.createElement("span", { className: "dsh-pset-selectOptionLabel" }, option.label),
-      option.value === value && /* @__PURE__ */ React3.createElement("span", { className: "dsh-pset-selectCheck" }, selectCheck)
+      /* @__PURE__ */ React2.createElement("span", { className: "dsh-pset-selectOptionLabel" }, option.label),
+      option.value === value && /* @__PURE__ */ React2.createElement("span", { className: "dsh-pset-selectCheck" }, selectCheck)
     ))
   ));
 }
-var React3, import_react5, selectChevron, selectCheck;
+var React2, import_react4, selectChevron, selectCheck;
 var init_dropdown_select = __esm({
   "src/client/components/dropdown-select.tsx"() {
     "use strict";
-    React3 = __toESM(require("react"), 1);
-    import_react5 = require("react");
-    selectChevron = /* @__PURE__ */ React3.createElement("svg", { width: "14", height: "14", viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" }, /* @__PURE__ */ React3.createElement(
+    React2 = __toESM(require("react"), 1);
+    import_react4 = require("react");
+    selectChevron = /* @__PURE__ */ React2.createElement("svg", { width: "14", height: "14", viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" }, /* @__PURE__ */ React2.createElement(
       "path",
       {
         d: "M3.75 6.25 8 10.5l4.25-4.25",
@@ -1153,7 +1064,7 @@ var init_dropdown_select = __esm({
         strokeLinejoin: "round"
       }
     ));
-    selectCheck = /* @__PURE__ */ React3.createElement("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" }, /* @__PURE__ */ React3.createElement(
+    selectCheck = /* @__PURE__ */ React2.createElement("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" }, /* @__PURE__ */ React2.createElement(
       "path",
       {
         d: "M3.25 8.5 6.5 11.75 12.75 4.75",
@@ -1516,22 +1427,22 @@ function asDraft(value) {
   };
 }
 function useSettings(form, t) {
-  const snapshot = (0, import_react6.useSyncExternalStore)(
+  const snapshot = (0, import_react5.useSyncExternalStore)(
     (listener) => form.subscribe(listener),
     () => form.getSnapshot()
   );
-  const [draft, setDraft] = (0, import_react6.useState)(null);
-  const [busy, setBusy] = (0, import_react6.useState)(false);
-  const [notice, setNotice] = (0, import_react6.useState)(null);
+  const [draft, setDraft] = (0, import_react5.useState)(null);
+  const [busy, setBusy] = (0, import_react5.useState)(false);
+  const [notice, setNotice] = (0, import_react5.useState)(null);
   const ready = snapshot.status === "ready" && snapshot.value !== void 0;
-  const saved = (0, import_react6.useMemo)(
+  const saved = (0, import_react5.useMemo)(
     () => ready && snapshot.value ? asDraft(snapshot.value) : null,
     [ready, snapshot.value]
   );
   const dirty = Boolean(
     draft && saved && Object.keys(draft).some((key) => draft[key] !== saved[key])
   );
-  (0, import_react6.useEffect)(() => {
+  (0, import_react5.useEffect)(() => {
     if (saved && (!draft || !dirty)) setDraft(saved);
   }, [saved, draft, dirty]);
   const contextNumber = Number(draft?.maxContextMessages);
@@ -1610,8 +1521,8 @@ function useSettings(form, t) {
   };
 }
 function useModels() {
-  const [models, setModels] = (0, import_react6.useState)(null);
-  (0, import_react6.useEffect)(() => {
+  const [models, setModels] = (0, import_react5.useState)(null);
+  (0, import_react5.useEffect)(() => {
     const controller = new AbortController();
     void api.models(controller.signal).then((value) => {
       if (!controller.signal.aborted) setModels(value);
@@ -1622,11 +1533,11 @@ function useModels() {
   }, []);
   return models;
 }
-var import_react6;
+var import_react5;
 var init_use_settings = __esm({
   "src/client/settings/use-settings.ts"() {
     "use strict";
-    import_react6 = require("react");
+    import_react5 = require("react");
     init_defaults();
     init_api();
   }
@@ -1637,9 +1548,9 @@ function SettingsPage({ form, t }) {
   const state = useSettings(form, t);
   const models = useModels();
   const { snapshot, draft, saved, dirty, disabled, busy, notice, contextValid } = state;
-  const header = /* @__PURE__ */ React4.createElement("header", { className: "dsh-pset-header" }, /* @__PURE__ */ React4.createElement("h2", { className: "dsh-pset-title" }, t("title")), /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-intro" }, t("description")));
+  const header = /* @__PURE__ */ React3.createElement("header", { className: "dsh-pset-header" }, /* @__PURE__ */ React3.createElement("h2", { className: "dsh-pset-title" }, t("title")), /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-intro" }, t("description")));
   if (!draft || !saved || snapshot.status !== "ready")
-    return /* @__PURE__ */ React4.createElement("section", { className: "dsh-pset-section" }, /* @__PURE__ */ React4.createElement("style", null, SETTINGS_CSS), header, /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-note" }, t(snapshot.status === "unavailable" ? "unavailable" : "loading")));
+    return /* @__PURE__ */ React3.createElement("section", { className: "dsh-pset-section" }, /* @__PURE__ */ React3.createElement("style", null, SETTINGS_CSS), header, /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-note" }, t(snapshot.status === "unavailable" ? "unavailable" : "loading")));
   const setField = (key, value) => state.setDraft((current) => current && { ...current, [key]: value });
   const modelValue = draft.provider && draft.model ? `${draft.provider}\0${draft.model}` : "";
   const options = [{ value: "", label: t("followSession") }];
@@ -1650,7 +1561,7 @@ function SettingsPage({ form, t }) {
       value: `${item.provider}\0${item.id}`,
       label: `${item.provider} / ${item.name}`
     });
-  return /* @__PURE__ */ React4.createElement("section", { className: "dsh-pset-section" }, /* @__PURE__ */ React4.createElement("style", null, SETTINGS_CSS), header, /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-form" }, snapshot.writable === false && /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-note", role: "status" }, t("readOnly")), /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-field dsh-pset-fieldRow" }, /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-rowText" }, /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-label", id: "ps-enabled-label" }, t("enabled")), /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-hint" }, t("enabledHint"))), /* @__PURE__ */ React4.createElement(
+  return /* @__PURE__ */ React3.createElement("section", { className: "dsh-pset-section" }, /* @__PURE__ */ React3.createElement("style", null, SETTINGS_CSS), header, /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-form" }, snapshot.writable === false && /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-note", role: "status" }, t("readOnly")), /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-field dsh-pset-fieldRow" }, /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-rowText" }, /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-label", id: "ps-enabled-label" }, t("enabled")), /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-hint" }, t("enabledHint"))), /* @__PURE__ */ React3.createElement(
     "button",
     {
       type: "button",
@@ -1661,8 +1572,8 @@ function SettingsPage({ form, t }) {
       disabled,
       onClick: state.toggleEnabled
     },
-    /* @__PURE__ */ React4.createElement("span", { className: "dsh-pset-thumb" })
-  )), /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-label", id: "ps-model-label" }, t("model")), models && models.length > 0 ? /* @__PURE__ */ React4.createElement(
+    /* @__PURE__ */ React3.createElement("span", { className: "dsh-pset-thumb" })
+  )), /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-label", id: "ps-model-label" }, t("model")), models && models.length > 0 ? /* @__PURE__ */ React3.createElement(
     DropdownSelect,
     {
       value: modelValue,
@@ -1680,7 +1591,7 @@ function SettingsPage({ form, t }) {
         );
       }
     }
-  ) : /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-rowText" }, /* @__PURE__ */ React4.createElement(
+  ) : /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-rowText" }, /* @__PURE__ */ React3.createElement(
     "input",
     {
       className: "dsh-pset-input",
@@ -1691,7 +1602,7 @@ function SettingsPage({ form, t }) {
       spellCheck: false,
       onChange: (event) => setField("provider", event.target.value)
     }
-  ), /* @__PURE__ */ React4.createElement(
+  ), /* @__PURE__ */ React3.createElement(
     "input",
     {
       className: "dsh-pset-input",
@@ -1702,7 +1613,7 @@ function SettingsPage({ form, t }) {
       spellCheck: false,
       onChange: (event) => setField("model", event.target.value)
     }
-  )), /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-hint" }, t("modelHint"))), /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React4.createElement("label", { className: "dsh-pset-label", htmlFor: "ps-context" }, t("context")), /* @__PURE__ */ React4.createElement(
+  )), /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-hint" }, t("modelHint"))), /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React3.createElement("label", { className: "dsh-pset-label", htmlFor: "ps-context" }, t("context")), /* @__PURE__ */ React3.createElement(
     "input",
     {
       id: "ps-context",
@@ -1715,7 +1626,7 @@ function SettingsPage({ form, t }) {
       disabled,
       onChange: (event) => setField("maxContextMessages", event.target.value)
     }
-  ), /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-hint" }, t(contextValid ? "contextHint" : "invalidContext"))), /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-head" }, /* @__PURE__ */ React4.createElement("label", { className: "dsh-pset-label", htmlFor: "ps-prompt" }, t("prompt")), /* @__PURE__ */ React4.createElement(
+  ), /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-hint" }, t(contextValid ? "contextHint" : "invalidContext"))), /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-field" }, /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-head" }, /* @__PURE__ */ React3.createElement("label", { className: "dsh-pset-label", htmlFor: "ps-prompt" }, t("prompt")), /* @__PURE__ */ React3.createElement(
     "button",
     {
       type: "button",
@@ -1724,7 +1635,7 @@ function SettingsPage({ form, t }) {
       onClick: state.resetPrompt
     },
     t("resetPrompt")
-  )), /* @__PURE__ */ React4.createElement(
+  )), /* @__PURE__ */ React3.createElement(
     "textarea",
     {
       id: "ps-prompt",
@@ -1734,14 +1645,14 @@ function SettingsPage({ form, t }) {
       spellCheck: false,
       onChange: (event) => setField("systemPrompt", event.target.value)
     }
-  ), /* @__PURE__ */ React4.createElement("p", { className: "dsh-pset-hint" }, t("promptHint"))), /* @__PURE__ */ React4.createElement("div", { className: "dsh-pset-footer" }, /* @__PURE__ */ React4.createElement(
+  ), /* @__PURE__ */ React3.createElement("p", { className: "dsh-pset-hint" }, t("promptHint"))), /* @__PURE__ */ React3.createElement("div", { className: "dsh-pset-footer" }, /* @__PURE__ */ React3.createElement(
     "p",
     {
       className: notice?.kind === "error" ? "dsh-pset-status dsh-pset-statusError" : "dsh-pset-status",
       role: "status"
     },
     notice?.text ?? ""
-  ), dirty && /* @__PURE__ */ React4.createElement(
+  ), dirty && /* @__PURE__ */ React3.createElement(
     "button",
     {
       type: "button",
@@ -1750,7 +1661,7 @@ function SettingsPage({ form, t }) {
       onClick: () => state.setDraft(saved)
     },
     t("discard")
-  ), /* @__PURE__ */ React4.createElement(
+  ), /* @__PURE__ */ React3.createElement(
     "button",
     {
       type: "button",
@@ -1761,11 +1672,11 @@ function SettingsPage({ form, t }) {
     t(busy ? "saving" : "save")
   ))));
 }
-var React4;
+var React3;
 var init_settings_page = __esm({
   "src/client/settings/settings-page.tsx"() {
     "use strict";
-    React4 = __toESM(require("react"), 1);
+    React3 = __toESM(require("react"), 1);
     init_defaults();
     init_dropdown_select();
     init_settings();
@@ -1789,21 +1700,13 @@ function apply(ctx) {
   const form = ctx.configForms.get(SETTINGS_NS);
   const controls = createSessionControls();
   ctx.effect(() => () => controls.dispose(), "prompt-suggestion: session controls");
-  const SettingsEntry = () => (0, import_react7.createElement)(SettingsPage, { form, t });
-  const GhostEntry = (props) => (0, import_react7.createElement)(ConfiguredPromptGhost, { ...props, form, controls });
-  const ControlsEntry = (props) => (0, import_react7.createElement)(PredictionControls, { ...props, form, controls, t });
+  const SettingsEntry = () => (0, import_react6.createElement)(SettingsPage, { form, t });
+  const GhostEntry = (props) => (0, import_react6.createElement)(ConfiguredPromptGhost, { ...props, form, controls });
   ctx.slots.inject(
     "conversation.input.overlay",
     () => ctx.slots.register(
       { name: "conversation.input.overlay", id: "prompt-ghost", order: 4 },
       GhostEntry
-    )
-  );
-  ctx.slots.inject(
-    "conversation.input.right",
-    () => ctx.slots.register(
-      { name: "conversation.input.right", id: "prompt-suggestion-controls", order: 24 },
-      ControlsEntry
     )
   );
   ctx.slots.inject(
@@ -1822,15 +1725,14 @@ function apply(ctx) {
     }
   });
 }
-var import_react7, inject;
+var import_react6, inject;
 var init_index = __esm({
   "src/client/index.ts"() {
     "use strict";
-    import_react7 = require("react");
+    import_react6 = require("react");
     init_defaults();
     init_nav_icon();
     init_commands();
-    init_prediction_controls();
     init_prompt_ghost();
     init_session_controls();
     init_locales();
