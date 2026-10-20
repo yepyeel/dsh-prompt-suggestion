@@ -1,7 +1,8 @@
 import { createElement as h } from 'react'
 import { LOCALE_NS, SETTINGS_NS } from '../shared/defaults'
-import type { ClientContext, GhostProps } from './dsh/contracts'
+import type { ClientContext, CommandUi, GhostProps } from './dsh/contracts'
 import { installSettingsNavIcon } from './dsh/nav-icon'
+import { predictionCommands } from './ghost/commands'
 import { PredictionControls } from './ghost/prediction-controls'
 import { ConfiguredPromptGhost } from './ghost/prompt-ghost'
 import { createSessionControls } from './ghost/session-controls'
@@ -42,4 +43,12 @@ export function apply(ctx: ClientContext) {
       SettingsEntry,
     ),
   )
+  const commands = predictionCommands({ form, controls, t })
+  ctx.inject?.(['commandUi'], (scope) => {
+    const commandUi = scope.get('commandUi') as CommandUi | undefined
+    if (!commandUi) return
+    for (const command of commands) {
+      scope.effect(() => commandUi.register(command), `prompt-suggestion: /${command.name} command`)
+    }
+  })
 }

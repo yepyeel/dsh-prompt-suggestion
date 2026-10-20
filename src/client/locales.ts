@@ -30,6 +30,17 @@ export const zh = {
   pauseAutomatic: '关闭本会话的自动预测',
   resumeAutomatic: '开启本会话的自动预测',
   generateSuggestion: '生成建议',
+  commandSuggest: '生成建议',
+  commandSuggestDescription: '立即为当前空输入生成一次预测（等同于 Alt+Shift+P）。',
+  commandAutopredict: '自动预测',
+  commandAutopredictDescription: '选择本会话的自动预测：开启或关闭。',
+  commandAutopredictPlaceholder: '选择自动预测状态',
+  commandAutopredictEmpty: '没有可用的状态',
+  commandAutopredictNoResults: '没有匹配的状态',
+  autoOptionOn: '开启',
+  autoOptionOnDetail: '每轮回复结束后自动请求预测',
+  autoOptionOff: '关闭',
+  autoOptionOffDetail: '只在点「生成建议」或按 Alt+Shift+P 时预测',
 }
 
 export const en = {
@@ -66,6 +77,17 @@ export const en = {
   pauseAutomatic: 'Pause automatic predictions for this conversation',
   resumeAutomatic: 'Resume automatic predictions for this conversation',
   generateSuggestion: 'Generate suggestion',
+  commandSuggest: 'Generate suggestion',
+  commandSuggestDescription: 'Predict once for the current empty input (same as Alt+Shift+P).',
+  commandAutopredict: 'Automatic predictions',
+  commandAutopredictDescription: 'Choose whether this conversation predicts automatically.',
+  commandAutopredictPlaceholder: 'Choose automatic prediction',
+  commandAutopredictEmpty: 'No states available',
+  commandAutopredictNoResults: 'No matching state',
+  autoOptionOn: 'On',
+  autoOptionOnDetail: 'Request a prediction after every completed reply',
+  autoOptionOff: 'Off',
+  autoOptionOffDetail: 'Predict only from Generate suggestion or Alt+Shift+P',
 }
 
 export type LocaleKey = keyof typeof en

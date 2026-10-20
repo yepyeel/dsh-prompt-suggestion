@@ -148,6 +148,69 @@ var init_nav_icon = __esm({
   }
 });
 
+// src/client/ghost/commands.ts
+function predictionCommands({ form, controls, t }) {
+  const available = () => {
+    const settings = form.getSnapshot();
+    return settings.status === "ready" && settings.value?.enabled !== false;
+  };
+  return [
+    {
+      name: "suggest",
+      label: () => t("commandSuggest"),
+      description: () => t("commandSuggestDescription"),
+      available,
+      ui: {
+        kind: "action",
+        run: (session) => {
+          setTimeout(() => {
+            controls.requestManual(session.sessionId);
+          }, 0);
+        }
+      }
+    },
+    {
+      name: "autopredict",
+      label: () => t("commandAutopredict"),
+      description: () => t("commandAutopredictDescription"),
+      available,
+      ui: {
+        kind: "popupSelect",
+        searchLabels: () => ({
+          placeholder: t("commandAutopredictPlaceholder"),
+          empty: t("commandAutopredictEmpty"),
+          noResults: t("commandAutopredictNoResults")
+        }),
+        options: async (session) => {
+          const automatic = controls.getAutomatic(session.sessionId);
+          return [
+            {
+              id: "on",
+              label: t("autoOptionOn"),
+              detail: t("autoOptionOnDetail"),
+              active: automatic
+            },
+            {
+              id: "off",
+              label: t("autoOptionOff"),
+              detail: t("autoOptionOffDetail"),
+              active: !automatic
+            }
+          ];
+        },
+        onSelect: async (option, session) => {
+          controls.setAutomatic(session.sessionId, option.id === "on");
+        }
+      }
+    }
+  ];
+}
+var init_commands = __esm({
+  "src/client/ghost/commands.ts"() {
+    "use strict";
+  }
+});
+
 // src/client/dsh/composer.ts
 function findComposer(node) {
   let current = node;
@@ -871,7 +934,18 @@ var init_locales = __esm({
       automaticOff: "自动预测：关",
       pauseAutomatic: "关闭本会话的自动预测",
       resumeAutomatic: "开启本会话的自动预测",
-      generateSuggestion: "生成建议"
+      generateSuggestion: "生成建议",
+      commandSuggest: "生成建议",
+      commandSuggestDescription: "立即为当前空输入生成一次预测（等同于 Alt+Shift+P）。",
+      commandAutopredict: "自动预测",
+      commandAutopredictDescription: "选择本会话的自动预测：开启或关闭。",
+      commandAutopredictPlaceholder: "选择自动预测状态",
+      commandAutopredictEmpty: "没有可用的状态",
+      commandAutopredictNoResults: "没有匹配的状态",
+      autoOptionOn: "开启",
+      autoOptionOnDetail: "每轮回复结束后自动请求预测",
+      autoOptionOff: "关闭",
+      autoOptionOffDetail: "只在点「生成建议」或按 Alt+Shift+P 时预测"
     };
     en = {
       title: "Prompt suggestion",
@@ -903,7 +977,18 @@ var init_locales = __esm({
       automaticOff: "Auto: off",
       pauseAutomatic: "Pause automatic predictions for this conversation",
       resumeAutomatic: "Resume automatic predictions for this conversation",
-      generateSuggestion: "Generate suggestion"
+      generateSuggestion: "Generate suggestion",
+      commandSuggest: "Generate suggestion",
+      commandSuggestDescription: "Predict once for the current empty input (same as Alt+Shift+P).",
+      commandAutopredict: "Automatic predictions",
+      commandAutopredictDescription: "Choose whether this conversation predicts automatically.",
+      commandAutopredictPlaceholder: "Choose automatic prediction",
+      commandAutopredictEmpty: "No states available",
+      commandAutopredictNoResults: "No matching state",
+      autoOptionOn: "On",
+      autoOptionOnDetail: "Request a prediction after every completed reply",
+      autoOptionOff: "Off",
+      autoOptionOffDetail: "Predict only from Generate suggestion or Alt+Shift+P"
     };
   }
 });
@@ -1728,6 +1813,14 @@ function apply(ctx) {
       SettingsEntry
     )
   );
+  const commands = predictionCommands({ form, controls, t });
+  ctx.inject?.(["commandUi"], (scope) => {
+    const commandUi = scope.get("commandUi");
+    if (!commandUi) return;
+    for (const command of commands) {
+      scope.effect(() => commandUi.register(command), `prompt-suggestion: /${command.name} command`);
+    }
+  });
 }
 var import_react7, inject;
 var init_index = __esm({
@@ -1736,6 +1829,7 @@ var init_index = __esm({
     import_react7 = require("react");
     init_defaults();
     init_nav_icon();
+    init_commands();
     init_prediction_controls();
     init_prompt_ghost();
     init_session_controls();

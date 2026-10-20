@@ -38,6 +38,52 @@ export interface SettingsForm {
   unset(key: keyof Settings): Promise<boolean>
 }
 
+/** The session handle a command contribution receives. */
+export interface CommandSession {
+  sessionId: string
+}
+
+/** One row inside a command's popupSelect; `active` marks the current value. */
+export interface CommandOption {
+  id: string
+  label: string
+  detail?: string
+  active?: boolean
+}
+
+/**
+ * Command UI body: a bare action that never submits, or a popup selector over
+ * session-derived options. Mirrors `@deepseek-ai/dsh-client-ui-commands`.
+ */
+export type CommandUiSpec =
+  | { kind: 'action'; run(session: CommandSession): void }
+  | {
+      kind: 'popupSelect'
+      searchLabels?: () => { placeholder: string; empty: string; noResults: string }
+      options(session: CommandSession): Promise<readonly CommandOption[]>
+      onSelect(option: CommandOption, session: CommandSession): Promise<void>
+    }
+
+/** A client-only slash command; it never becomes a model message. */
+export interface CommandContribution {
+  name: string
+  label?: () => string
+  description?: () => string
+  icon?: unknown
+  available(session: CommandSession): boolean
+  ui: CommandUiSpec
+}
+
+export interface CommandUi {
+  register(contribution: CommandContribution): unknown
+}
+
+/** Scoped context handed to `ctx.inject` once its services are available. */
+export interface ClientScope {
+  get(name: string): unknown
+  effect(factory: () => unknown, label: string): unknown
+}
+
 export interface ClientContext {
   locale: {
     bind(namespace: string): Translate
@@ -55,4 +101,6 @@ export interface ClientContext {
     ): unknown
   }
   effect(factory: () => unknown, label: string): unknown
+  /** Optional so the plugin still mounts where the command surface is absent. */
+  inject?<T>(deps: string[], callback: (scope: ClientScope) => T): unknown
 }

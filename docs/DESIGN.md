@@ -23,6 +23,7 @@ Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` �
 | `src/client/api.ts` | 同源请求、响应验证、取消与传输期限 |
 | `src/client/ghost/controller.ts` | 独立于 React/DOM 的状态与异步生命周期 |
 | `src/client/ghost/session-controls.ts` | 当前浏览器按 Session 保存的自动开关与手动命令分发 |
+| `src/client/ghost/commands.ts` | `/suggest` 与 `/autopredict` 客户端指令，复用同一开关与手动请求 |
 | `src/client/ghost/` | React 订阅、ghost 展示与适配层连接 |
 | `src/client/settings/` | 设置订阅、草稿、校验、保存/恢复与 TSX 展示 |
 | `src/client/dsh/` | 宿主接口子集、编辑器测量、placeholder、键盘与导航图标适配 |
@@ -67,6 +68,8 @@ idle → requesting → shown → accepted
 自动预测默认开启，可在 `conversation.input.right` 工具栏按会话关闭。偏好在当前浏览器的 localStorage 按 Session ID 保存，只写入关闭标记，重新开启即删除；存储不可用时保留内存偏好。切换会话时使用该会话的偏好，关闭自动预测立即作废待执行和进行中的预测。
 
 「生成建议」按钮和所属编辑器内的 `Alt+Shift+P` 可显式生成一次预测，允许空闲会话初次挂载或本轮已忽略后再次请求，也允许在关闭自动预测时使用。手动命令按 Session 分发，切换会话和卸载后注销；不保存待执行命令。它遵守全局启用状态、空闲、空草稿、无附件和非组合输入条件，复用同一控制器的取消、回包校验及重试上限，进行中的重复命令不增加调用。快捷键只在编辑器拥有焦点且请求可执行时接管；结果仍需 Tab / → 采纳，不发送消息。
+
+同一能力也注册为客户端指令：`/suggest` 是 action，只消费自己的 token 后运行手动命令；它等到下一个任务再请求，因为同一次事件里消费 token 后，编辑器草稿要等一次状态发布才会变空。`/autopredict` 是 popupSelect，读取并写入本会话的开关，`active` 标出当前状态；指令行的 `label()` 没有 session 参数，所以不在标题里拼「开 / 关」。两者都通过 `ctx.commandUi` 注册，不经过 Host 命令表，不产生模型消息，也不进入会话日志；`commandUi` 缺失时只跳过指令，工具栏按钮不受影响。
 
 每个延时任务与请求保存发起时的 sessionId、回合 generation 和 requestId，请求前及回包后均核对身份与当前条件。会话切换、新回合、草稿或附件变化、dismiss 或卸载会作废旧编号、取消请求并清理重试。ghost 通过 configForms 订阅启用状态；关闭后立即收起并取消，重新开启时等待下一轮回合结束。即使 transport 忽略 abort，或用户清空草稿、切回原会话、重新开启功能，旧结果也不能覆盖新状态。传输期限为 10 秒，为 Host 留出响应时间。
 
