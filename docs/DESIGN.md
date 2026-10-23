@@ -40,7 +40,7 @@ Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` �
 5. 聚合 `llm.stream()` 的 text-delta，忽略 reasoning 等事件；错误或中止结束视为失败。
 6. 取第一条非空行并去掉列表与引号装饰；代码围栏、空文本与超过 200 字符的候选丢弃。`NO_SUGGESTION` 和 `null` 表示正常空候选；泛泛的中英文「继续 / continue / go ahead」丢弃，带有具体对象的动作和可推断的简短回答保留。
 
-默认提示词允许在上下文不足、没有明确后续或无法推断问题答案时返回 `NO_SUGGESTION`，不要求每轮强行生成。候选还会与当前 Session 派生出的全部用户消息比较，包括未发送给预测模型的历史；比较会统一 Unicode 兼容形式、空白、大小写、外层引号和句末标点，只过滤规范化后相同的输入，不做模糊匹配。助手与工具文本不算历史用户输入。过滤在 Host 解析阶段执行，自定义提示词不能绕过。
+默认提示词要求以用户口吻写下一句，并按「回答助手的提问 → 处理未解决的失败 → 任务完成后的下一步 → NO_SUGGESTION」的优先级判断；要求模仿用户以往的语气和长短，只使用对话里出现过的名称，不提议已完成的事；以「用户会不会直接按 Tab 采纳」作为是否给出建议的标准，拿不准时返回 `NO_SUGGESTION`，不要求每轮强行生成。对话记录末尾固定追加一行输出要求（自定义提示词同样生效），让输出格式成为模型最后读到的内容。解析时还会去掉模型照抄的「用户：」「预测：」「→」等前缀。候选还会与当前 Session 派生出的全部用户消息比较，包括未发送给预测模型的历史；比较会统一 Unicode 兼容形式、空白、大小写、外层引号和句末标点，只过滤规范化后相同的输入，不做模糊匹配。助手与工具文本不算历史用户输入。过滤在 Host 解析阶段执行，自定义提示词不能绕过。
 
 空候选继续返回 `{ suggestion: null, model }`，不算模型错误、不记录失败日志，Client 保持 idle 且不自动重试；预测不写入 Session。
 
@@ -94,6 +94,7 @@ DSH 0.2.x 没有公开设置导航图标入口，`dsh/nav-icon.ts` 隔离相应�
 - Host 测试：真实本地 HTTP server 搭配受控 Session / LLM，验证成功、错误、Origin、热更新、断开取消、SDK 异常出口。
 - 生命周期测试：缓存、并发、超时清理、忽略取消的 provider、旧会话/回合回包、重试上限、插入失败。
 - React/jsdom 测试：StrictMode、Tab/→ 不发送、Esc、IME、焦点作用域、placeholder 恢复、保存失败重试、只读与下拉键盘操作。
+- 环境兼容：`tests/setup.ts` 只在 `globalThis.localStorage` 缺失时补内存实现（Node.js 22.4+ 的实验性 Web Storage 会遮蔽 jsdom 的实现）；`test-package` 先解析临时目录真实路径，避免 macOS `/var` 软链接导致断言误报。依赖使用 pnpm 全局 store，项目内不再保留 `.pnpm-store`。
 - 安装包检查：npm pack 后只安装运行时依赖，验证公开 Host 导出、Client 的普通 CJS apply/inject 对象及宿主 React 外部依赖。
 
 `pnpm build:check` 不改写产物；`pnpm dev` 监听双端重建，重载仍需 DSH 完成。真实模型内容质量、实际浏览器主题与视觉对齐不属于 jsdom 验证范围。

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const temporary = await mkdtemp(path.join(tmpdir(), 'dsh-package-'))
+// macOS resolves /var to /private/var; compare against the real path so the
+// module-resolution assertions below match what Node reports.
+const temporary = await realpath(await mkdtemp(path.join(tmpdir(), 'dsh-package-')))
 const require = createRequire(path.join(root, 'package.json'))
 const run = (command, args, cwd = root) =>
   execFileSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })

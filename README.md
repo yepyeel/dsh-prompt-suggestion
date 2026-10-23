@@ -189,7 +189,11 @@ build/                         # 已构建并提交，供 DSH 安装后直接加
 
 ## 开发
 
-要求 Node.js 22.12+（推荐 `.node-version` 的 Node.js 24）和 pnpm 11.25.0。pnpm 版本由 `packageManager` 固定。
+要求 Node.js 22.12+（推荐 `.node-version` 的 Node.js 24，Node.js 26 也已验证）和 pnpm 11.25.0。pnpm 版本由 `packageManager` 固定，依赖装在 pnpm 全局 store 中，不要指定项目内的 `--store-dir`，否则 pnpm 会认为现有的 `node_modules` 来自另一套配置而要求重建。
+
+Node.js 22.4+ 自带实验性的 Web Storage 全局变量，未加 `--localstorage-file` 时它的值为 `undefined`，会遮蔽 jsdom 提供的 `localStorage`，导致 DOM 测试报 `Cannot read properties of undefined`。`tests/setup.ts` 只在缺失时补一个内存实现，jsdom 自身有实现时不会覆盖，因此无需设置 `NODE_OPTIONS`。
+
+macOS 上 `/var` 是 `/private/var` 的软链接；`scripts/test-package.mjs` 在比较模块解析路径前会先解析临时目录的真实路径，避免 `test:package` 误报失败。
 
 ```bash
 pnpm install --frozen-lockfile
