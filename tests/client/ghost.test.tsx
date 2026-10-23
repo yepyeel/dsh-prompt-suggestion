@@ -152,6 +152,26 @@ describe('composer integration', () => {
     },
   )
 
+  it('wraps a long prediction and grows the editor until it is dismissed', async () => {
+    vi.mocked(api.suggest).mockResolvedValue({ suggestion: '继续测试', model: 'fixture/model' })
+    const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
+    const original = measure.getMockImplementation()
+    // The off-screen probe reports three wrapped 24px lines; everything else is unchanged.
+    measure.mockImplementation(function (this: HTMLElement) {
+      const rect = original?.call(this) as DOMRect
+      return this.style.left === '-10000px' ? { ...rect, height: 72 } : rect
+    })
+    const view = await show()
+    const editor = view.getByRole('textbox', { name: 'Composer' })
+    const text = view.container.querySelector<HTMLElement>('.dsh-ps-text')
+    expect(text?.style.webkitLineClamp).toBe('3')
+    expect(editor.style.minHeight).toBe('72px')
+    expect(document.body.querySelector('[style*="-10000px"]')).toBeNull()
+    editor.focus()
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    expect(editor.style.minHeight).toBe('')
+  })
+
   it('ignores modified keys and IME key events, and restores the placeholder on Escape', async () => {
     const view = await show()
     const editor = view.getByRole('textbox', { name: 'Composer' })

@@ -8,12 +8,13 @@ import {
   listenComposerKeys,
   listenPredictionShortcut,
   measureComposer,
+  reserveEditorLines,
 } from '../dsh/composer'
 import type { PredictionController } from './controller'
 
 export function useComposer(
   root: RefObject<HTMLDivElement>,
-  shown: boolean,
+  text: string | undefined,
   sessionId: string | undefined,
   controller: PredictionController,
   accept: () => void,
@@ -31,16 +32,18 @@ export function useComposer(
 
   useLayoutEffect(() => {
     const node = root.current
-    if (!shown || !node || !sessionId) {
+    if (text === undefined || !node || !sessionId) {
       setBox(null)
       return
     }
+    const reservation = reserveEditorLines(node)
     const update = () => {
-      const measured = measureComposer(node)
+      const measured = measureComposer(node, text)
       if (!measured) {
         controller.dismiss()
         return
       }
+      reservation.apply(measured.maxLines, Number.parseFloat(measured.lineHeightPx))
       setBox(measured)
     }
     update()
@@ -53,11 +56,12 @@ export function useComposer(
     window.addEventListener('scroll', update, true)
     return () => {
       restore()
+      reservation.restore()
       unlisten()
       observer?.disconnect()
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [root, shown, sessionId, controller, accept])
+  }, [root, text, sessionId, controller, accept])
   return box
 }

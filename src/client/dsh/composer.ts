@@ -19,7 +19,54 @@ export function findComposer(node: HTMLElement | null): HTMLElement | null {
   return current
 }
 
-export function measureComposer(root: HTMLElement): GhostBox | null {
+export const MAX_GHOST_LINES = 3
+// Fallback width of the trailing "Tab" badge plus the flex gap.
+const KEY_RESERVE_PX = 40
+
+/** Lines `text` wraps to at `width`, measured with an invisible probe. */
+export function countLines(
+  text: string,
+  width: number,
+  style: Pick<CSSStyleDeclaration, 'font' | 'letterSpacing' | 'lineHeight'>,
+  lineHeight: number,
+) {
+  if (!text || width <= 0) return 1
+  const probe = document.createElement('div')
+  Object.assign(probe.style, {
+    position: 'absolute',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    left: '-10000px',
+    top: '0',
+    width: `${width}px`,
+    font: style.font,
+    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight,
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+  })
+  probe.textContent = text
+  document.body.appendChild(probe)
+  const height = probe.getBoundingClientRect().height
+  probe.remove()
+  return Math.max(1, Math.min(MAX_GHOST_LINES, Math.round(height / lineHeight)))
+}
+
+function px(value: string) {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+/** Lines that fit the host's scroll cap (`--dsh-composer-text-max-height`). */
+function scrollCapLines(placeholder: HTMLElement, top: number, lineHeight: number) {
+  const scroll = placeholder.closest<HTMLElement>('[data-input-scroll]')
+  if (!scroll) return MAX_GHOST_LINES
+  const cap = px(getComputedStyle(scroll).maxHeight)
+  if (!cap) return MAX_GHOST_LINES
+  return Math.max(1, Math.floor((cap - top) / lineHeight))
+}
+
+export function measureComposer(root: HTMLElement, text = ''): GhostBox | null {
   const card = findComposer(root)
   const placeholder = card?.querySelector<HTMLElement>(PLACEHOLDER_SELECTOR)
   if (!placeholder) return null
@@ -28,8 +75,13 @@ export function measureComposer(root: HTMLElement): GhostBox | null {
   if (rect.width === 0 || rect.height === 0) return null
   const style = getComputedStyle(placeholder)
   const lineHeight = Number.parseFloat(style.lineHeight) || 24
-  const toolbar = placeholder.parentElement?.parentElement?.nextElementSibling
-  const limit = toolbar ? toolbar.getBoundingClientRect().top : rect.bottom
+  const key = root.querySelector<HTMLElement>('.dsh-ps-keyWrap')?.getBoundingClientRect().width
+  const reserve = key ? key + 8 : KEY_RESERVE_PX
+  const offset = rect.top - (placeholder.parentElement?.getBoundingClientRect().top ?? rect.top)
+  const lines = Math.min(
+    countLines(text, rect.width - reserve, style, lineHeight),
+    scrollCapLines(placeholder, offset, lineHeight),
+  )
   return {
     left: rect.left - origin.left,
     top: rect.top - origin.top,
@@ -38,8 +90,32 @@ export function measureComposer(root: HTMLElement): GhostBox | null {
     lineHeight: style.lineHeight,
     letterSpacing: style.letterSpacing,
     color: style.color,
-    maxLines: Math.max(1, Math.min(3, Math.floor((limit - rect.top - 2) / lineHeight))),
+    maxLines: lines,
     lineHeightPx: `${lineHeight}px`,
+  }
+}
+
+/**
+ * The ghost is an overlay and cannot push the composer open by itself. While it
+ * is visible, raise the editor's min-height so the card (and toolbar) make room
+ * for every wrapped line; the original inline value comes back on cleanup.
+ */
+export function reserveEditorLines(root: HTMLElement) {
+  const editor = findComposer(root)?.querySelector<HTMLElement>(EDITOR_SELECTOR)
+  if (!editor) return { apply: (_lines: number, _lineHeight: number) => {}, restore: () => {} }
+  const original = editor.style.minHeight
+  const computed = getComputedStyle(editor)
+  const base = px(computed.minHeight)
+  const padding = px(computed.paddingTop) + px(computed.paddingBottom)
+  return {
+    apply(lines: number, lineHeight: number) {
+      const needed = Math.ceil(padding + lines * lineHeight)
+      const next = needed > base ? `${needed}px` : original
+      if (editor.style.minHeight !== next) editor.style.minHeight = next
+    },
+    restore() {
+      editor.style.minHeight = original
+    },
   }
 }
 
