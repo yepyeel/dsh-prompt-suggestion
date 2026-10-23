@@ -220,6 +220,10 @@ describe('suggestion parsing', () => {
   it.each([
     ['1. “继续添加测试”\n其他内容', '继续添加测试'],
     ['- next step', 'next step'],
+    ['用户：先把失败的测试修好', '先把失败的测试修好'],
+    ['→ 提交并发布一个新版本', '提交并发布一个新版本'],
+    ['Prediction: run the tests again', 'run the tests again'],
+    ['用户名校验也要补上', '用户名校验也要补上'],
     ['\n\n  plain text  ', 'plain text'],
     ['```code```', null],
     ['', null],
@@ -286,6 +290,27 @@ describe('volatile settings and model selection', () => {
 })
 
 describe('stream completion', () => {
+  it('sends the transcript with the output contract as its final line', async () => {
+    const requests: { messages: { content: { text: string }[] }[]; system: string }[] = []
+    const llm = {
+      async *stream(request: (typeof requests)[number]) {
+        requests.push(request)
+        yield { type: 'finish', reason: { kind: 'completed' } }
+      },
+    }
+    await complete(
+      llm as never,
+      { provider: 'test', model: 'model' },
+      '用户: 修复超时',
+      new AbortController().signal,
+      resolveSettings({}),
+    )
+    const text = requests[0].messages[0].content[0].text
+    expect(text).toMatch(/^对话记录：\n\n用户: 修复超时\n\n---\n/)
+    expect(text).toMatch(/NO_SUGGESTION。$/)
+    expect(requests[0].system).toBe(DEFAULT_PROMPT)
+  })
+
   it('joins text deltas and stops at finish', async () => {
     const llm = {
       async *stream() {

@@ -1,5 +1,5 @@
 import type { ModelSelection, Settings } from '../shared/contracts'
-import { DEFAULT_MAX_TOKENS, DEFAULT_PROMPT } from '../shared/defaults'
+import { DEFAULT_MAX_TOKENS, DEFAULT_PROMPT, TRANSCRIPT_TRAILER } from '../shared/defaults'
 import type { ContentBlock, HostContext, LLM, Message, Session } from './dsh'
 
 const MESSAGE_CHARS = 700
@@ -219,6 +219,9 @@ export function parseSuggestion(raw: unknown, messages: readonly Message[] = [])
   const text = line
     .replace(/^[-*•]\s+/, '')
     .replace(/^\d+[.)、]\s+/, '')
+    // Labels a model may copy from the transcript format or the prompt examples.
+    .replace(/^(?:→|->)\s*/, '')
+    .replace(/^(?:用户|预测|下一句|user|prediction)\s*[:：]\s*/i, '')
     .replace(/^["'“”‘’`]+/, '')
     .replace(/["'“”‘’`]+$/, '')
     .trim()
@@ -263,7 +266,14 @@ export async function complete(
     provider: model.provider,
     model: model.model,
     system: settings?.systemPrompt || DEFAULT_PROMPT,
-    messages: [{ role: 'user', content: [{ type: 'text', text: `对话记录：\n\n${transcript}` }] }],
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `对话记录：\n\n${transcript}\n\n---\n${TRANSCRIPT_TRAILER}` },
+        ],
+      },
+    ],
     temperature: 0.5,
     maxTokens: settings?.maxTokens ?? DEFAULT_MAX_TOKENS,
     signal,
