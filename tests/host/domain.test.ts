@@ -63,7 +63,7 @@ describe('transcript budget', () => {
           message('assistant', 'old reply'),
           message('user', '当前需求：修复取消逻辑'),
           ...Array.from({ length: 70 }, (_, index) =>
-            message('tool', `${index}: ${'x'.repeat(300)}`),
+            message('assistant', `${index}: ${'x'.repeat(300)}`),
           ),
           message('assistant', '修复完成，需要继续测试吗？'),
         ],
@@ -77,6 +77,86 @@ describe('transcript budget', () => {
       expect(transcript.length).toBeLessThanOrEqual(7_000)
     },
   )
+
+  const call = (id: string, name: string, args: unknown) => ({
+    role: 'assistant',
+    content: [{ type: 'tool-call', id, name, arguments: args }],
+  })
+  const result = (toolCallId: string, text: string, isError = false) => ({
+    role: 'tool',
+    toolCallId,
+    isError,
+    content: [{ type: 'text', text }],
+  })
+
+  it('renders tool calls next to their results so the model sees what happened', () => {
+    const transcript = buildTranscript([
+      message('user', '修复超时'),
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: '先看一下代码。' },
+          { type: 'tool-call', id: 'a', name: 'read', arguments: '{"file_path":"src/a.ts"}' },
+        ],
+      },
+      result('a', 'export const a = 1'),
+      call(
+        'b',
+        'edit',
+        JSON.stringify({ file_path: 'src/a.ts', old_string: 'x', new_string: 'y' }),
+      ),
+      result('b', 'ok'),
+      call('c', 'bash', { command: 'pnpm   test', description: 'Run tests' }),
+      result('c', `${'log '.repeat(100)}FAIL tests/a.test.ts\n[exit code: 1]`),
+      message('assistant', '测试失败了，需要我继续修吗？'),
+    ])
+    expect(transcript).toBe(
+      [
+        '用户: 修复超时',
+        '助手: 先看一下代码。',
+        [
+          '工具: [调用 read] src/a.ts → 结果：export const a = 1',
+          '[调用 edit] src/a.ts → 结果：ok',
+          `[调用 bash] pnpm test → 失败：…${`${'log '.repeat(100)}FAIL tests/a.test.ts [exit code: 1]`.slice(-159)}`,
+        ].join('\n'),
+        '助手: 测试失败了，需要我继续修吗？',
+      ].join('\n\n'),
+    )
+  })
+
+  it('marks explicit tool errors, tolerates odd arguments, and keeps calls without results', () => {
+    const transcript = buildTranscript([
+      message('user', 'go'),
+      call('a', 'fetch', 'not json'),
+      result('a', 'connection refused', true),
+      call('b', 'custom', { nested: { deep: true }, label: 'first string' }),
+      call('c', '', null),
+      message('assistant', 'done'),
+    ])
+    expect(transcript).toContain('[调用 fetch] not json → 失败：connection refused')
+    expect(transcript).toContain('[调用 custom] first string')
+    expect(transcript).toContain('[调用 工具]\n')
+    expect(transcript).not.toContain('[工具结果]')
+  })
+
+  it('folds a long run of operations into one bounded entry that keeps the newest', () => {
+    const messages = [
+      message('user', '批量修改'),
+      ...Array.from({ length: 20 }, (_, index) => [
+        call(`c${index}`, 'bash', { command: `step-${index} ${'y'.repeat(200)}` }),
+        result(`c${index}`, 'z'.repeat(400)),
+      ]).flat(),
+      message('assistant', '全部完成'),
+    ]
+    const transcript = buildTranscript(messages, 3)
+    const entries = transcript.split('\n\n')
+    expect(entries).toHaveLength(3)
+    expect(entries[1]).toMatch(/^工具: （前 \d+ 项操作已省略）/)
+    expect(entries[1]).toContain('step-19')
+    expect(entries[1]).not.toContain('step-0 ')
+    expect(entries[1].length).toBeLessThanOrEqual(1_250)
+    expect(transcript).toMatch(/助手: 全部完成$/)
+  })
 
   it('bounds individual messages and total context', () => {
     const messages = Array.from({ length: 30 }, (_, index) =>

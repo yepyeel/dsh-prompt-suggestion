@@ -3,9 +3,21 @@ import type { ModelSelection, Settings } from '../shared/contracts'
 
 // Only the public Host capabilities this plugin actually consumes. Keep SDK
 // adaptation here so core rules and tests do not depend on Harness internals.
+export interface ContentBlock {
+  type: string
+  text?: string
+  /** `tool-call` blocks: call id, tool name, and JSON-encoded arguments. */
+  id?: string
+  name?: string
+  arguments?: unknown
+}
+
 export interface Message {
   role: string
-  content?: readonly { type: string; text?: string }[]
+  content?: readonly ContentBlock[]
+  /** `tool` messages: the call they answer and whether the tool failed. */
+  toolCallId?: string
+  isError?: boolean
 }
 
 export interface SessionEvent {
