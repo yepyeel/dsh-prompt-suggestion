@@ -5,7 +5,8 @@
 ## 功能
 
 - **回合结束后预测**：不做逐字补全，只在助手回复完成、输入框为空时请求一次。
-- **使用真实上下文**：优先保留最近的用户需求与助手回复；长正文保留首尾，工具结果只保留缩写，控制成本。
+- **使用真实上下文**：优先保留最近的用户需求与助手回复；长正文保留首尾。助手的工具调用会压缩成一行摘要（工具名 + 关键参数 + 结果），失败的命令保留输出结尾，连续操作合并为一条并限制长度，让模型知道改了什么、哪里失败。
+- **切换会话不丢预测**：离开会话时保留未采纳的预测，进行中的请求也会继续完成；切回来时向 Host 确认仍是同一回合后再展示。
 - **允许没有建议**：上下文不足或没有明确下一步时可返回空；重复历史用户输入和泛泛的「继续」不会展示。
 - **可配置**：启用开关、预测模型、上下文消息条数、系统提示词。
 - **按会话控制**：用 `/autopredict` 关闭当前会话的自动预测；需要时用 `/suggest` 或 `Alt+Shift+P` 手动生成。输入框工具栏不再占用按钮。
@@ -132,7 +133,7 @@ pnpm build
 
 ## 实现概览
 
-- **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`；`GET /prompt-suggestion/models` 汇总可用模型。
+- **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`，结果附带所属回合 `turn`；`POST /prompt-suggestion/turn` 只返回最新已完成回合，用于校验缓存，不调用模型；`GET /prompt-suggestion/models` 汇总可用模型。
 - **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `build/client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
 - **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
 - **过期结果保护**：请求和回包都核对会话与回合；开始输入、中文输入法组合、切换会话或关闭功能时立即作废旧预测。
@@ -182,7 +183,7 @@ build/                         # 已构建并提交，供 DSH 安装后直接加
 ## 已知限制
 
 - 一次只给一条候选；不支持点击采纳（点击输入区用于定位光标）。
-- ghost 的可见行数取决于输入框可用高度，超长预测会被裁剪。
+- ghost 最多显示三行，展示期间输入框会临时增高；超过三行的预测会被裁剪。
 - 没有埋点，采纳率需要手动观察或自行加日志。
 - 每次预测会多消耗一次模型调用（上下文约 3–5k token）。
 

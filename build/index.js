@@ -3,6 +3,7 @@
 // src/shared/defaults.ts
 var DEFAULT_PROMPT = `你是一个输入预测器。下面是用户与编码 Agent 的对话记录。
 只在对话提供足够依据时，预测用户接下来最可能输入的一条具体、有价值的消息。
+记录中的「工具」条目是助手执行过的操作摘要（调用了什么、改了哪个文件、命令是否失败），可作为判断下一步的线索。
 
 规则：
 - 如果上下文不足、无法确定具体的下一步，或任务已结束且没有明确后续，只输出 NO_SUGGESTION。这是正常结果，不必强行给出建议。
@@ -16,6 +17,7 @@ var DEFAULT_PROMPT = `你是一个输入预测器。下面是用户与编码 Age
 var SETTINGS_NS = "prompt-suggestion";
 var ROUTE = "/prompt-suggestion/suggest";
 var MODELS_ROUTE = "/prompt-suggestion/models";
+var TURN_ROUTE = "/prompt-suggestion/turn";
 var DEFAULT_CONTEXT_MESSAGES = 16;
 var MIN_CONTEXT_MESSAGES = 2;
 var MAX_CONTEXT_MESSAGES = 64;
@@ -100,6 +102,23 @@ function createModelCatalog(llm) {
 // src/host/domain.ts
 var MESSAGE_CHARS = 700;
 var CONTEXT_CHARS = 7e3;
+var TOOL_ARGUMENT_CHARS = 120;
+var TOOL_OUTPUT_CHARS = 160;
+var TOOL_SUCCESS_CHARS = 80;
+var MAX_OPERATIONS = 6;
+var OPERATIONS_CHARS = 1200;
+var ARGUMENT_KEYS = [
+  "command",
+  "cmd",
+  "file_path",
+  "filePath",
+  "path",
+  "pattern",
+  "query",
+  "url",
+  "description"
+];
+var EXIT_CODE = /exit code:?\s*(-?\d+)/i;
 function textOf(message) {
   if (!message || !Array.isArray(message.content)) return "";
   const parts = [];
@@ -115,19 +134,103 @@ function abbreviate(text) {
   const tail = MESSAGE_CHARS - marker.length - head;
   return `${text.slice(0, head)}${marker}${text.slice(-tail)}`;
 }
+function oneLine(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function clipHead(text, max) {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+function clipTail(text, max) {
+  return text.length <= max ? text : `…${text.slice(-(max - 1))}`;
+}
+function summarizeArguments(raw) {
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return clipHead(oneLine(raw), TOOL_ARGUMENT_CHARS);
+    }
+  }
+  if (typeof value === "string") return clipHead(oneLine(value), TOOL_ARGUMENT_CHARS);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const record = value;
+  const strings = (keys) => keys.map((key) => record[key]).filter((item) => typeof item === "string");
+  const picked = strings(ARGUMENT_KEYS).find((item) => item.trim()) ?? strings(Object.keys(record)).find((item) => item.trim()) ?? "";
+  return clipHead(oneLine(picked), TOOL_ARGUMENT_CHARS);
+}
+function summarizeResult(message) {
+  if (!message) return "";
+  const text = oneLine(textOf(message));
+  const exit = EXIT_CODE.exec(text);
+  const failed = message.isError === true || exit !== null && Number(exit[1]) !== 0;
+  if (failed) return text ? `失败：${clipTail(text, TOOL_OUTPUT_CHARS)}` : "失败";
+  return text ? `结果：${clipHead(text, TOOL_SUCCESS_CHARS)}` : "";
+}
+function describeCall(block, result) {
+  const name = typeof block.name === "string" && block.name.trim() ? block.name.trim() : "工具";
+  const args = summarizeArguments(block.arguments);
+  const outcome = summarizeResult(result);
+  return `[调用 ${name}]${args ? ` ${args}` : ""}${outcome ? ` → ${outcome}` : ""}`;
+}
+function foldOperations(operations) {
+  let kept = operations.slice(-MAX_OPERATIONS);
+  while (kept.length > 1 && kept.join("\n").length > OPERATIONS_CHARS) kept = kept.slice(1);
+  const omitted = operations.length - kept.length;
+  const body = clipHead(kept.join("\n"), OPERATIONS_CHARS);
+  return omitted > 0 ? `（前 ${omitted} 项操作已省略）
+${body}` : body;
+}
+function toEntries(messages) {
+  const results = /* @__PURE__ */ new Map();
+  const calls = /* @__PURE__ */ new Set();
+  for (const message of messages) {
+    if (message?.role === "tool" && typeof message.toolCallId === "string")
+      results.set(message.toolCallId, message);
+    if (message?.role === "assistant" && Array.isArray(message.content)) {
+      for (const block of message.content)
+        if (block?.type === "tool-call" && typeof block.id === "string") calls.add(block.id);
+    }
+  }
+  const entries = [];
+  let operations = [];
+  const flush = () => {
+    if (!operations.length) return;
+    entries.push({ label: "工具", text: foldOperations(operations) });
+    operations = [];
+  };
+  for (const message of messages) {
+    if (!message || message.role === "system" || message.role === "developer") continue;
+    if (message.role === "tool") {
+      if (typeof message.toolCallId === "string" && calls.has(message.toolCallId)) continue;
+      const text2 = oneLine(textOf(message));
+      if (text2) operations.push(`[工具结果] ${clipHead(text2, TOOL_OUTPUT_CHARS)}`);
+      continue;
+    }
+    const text = textOf(message).trim();
+    if (text) {
+      flush();
+      const label = message.role === "user" ? "用户" : message.role === "assistant" ? "助手" : "工具";
+      entries.push({ label, text: abbreviate(text) });
+    }
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const block of message.content)
+        if (block?.type === "tool-call")
+          operations.push(
+            describeCall(block, typeof block.id === "string" ? results.get(block.id) : void 0)
+          );
+    }
+  }
+  flush();
+  return entries;
+}
 function buildTranscript(messages, maxMessages = 16) {
   const lines = [];
   let latestUser = -1;
   let latestAssistant = -1;
-  for (const message of messages) {
-    if (!message || message.role === "system" || message.role === "developer") continue;
-    let text = textOf(message).trim();
-    if (!text) continue;
-    if (message.role === "tool") text = `[工具结果] ${text.replace(/\s+/g, " ").slice(0, 160)}`;
-    text = abbreviate(text);
-    const label = message.role === "user" ? "用户" : message.role === "assistant" ? "助手" : "工具";
-    if (message.role === "user") latestUser = lines.length;
-    if (message.role === "assistant") latestAssistant = lines.length;
+  for (const { label, text } of toEntries(messages)) {
+    if (label === "用户") latestUser = lines.length;
+    if (label === "助手") latestAssistant = lines.length;
     lines.push(`${label}: ${text}`);
   }
   const kept = /* @__PURE__ */ new Set();
@@ -233,6 +336,12 @@ function isAtRest(session) {
 // src/host/suggestion-service.ts
 function createSuggestionService(ctx) {
   return {
+    /** Cheap freshness check for a client-cached candidate; never calls a model. */
+    turn(sessionId, settings) {
+      if (!settings.enabled) return null;
+      const session = ctx.sessions.get(sessionId);
+      return session ? completedTurnSeq(session) : null;
+    },
     async suggest(sessionId, settings, signal) {
       if (!settings.enabled) return { suggestion: null, reason: "disabled" };
       const session = ctx.sessions.get(sessionId);
@@ -274,7 +383,8 @@ function createSuggestionService(ctx) {
           return { suggestion: null, reason: "stale-turn" };
         return {
           suggestion: parseSuggestion(raw, messages),
-          model: `${model.provider}/${model.model}`
+          model: `${model.provider}/${model.model}`,
+          turn: turnSeq
         };
       } catch {
         const reason = timedOut ? "timeout" : signal.aborted ? "cancelled" : "upstream-error";
@@ -309,6 +419,17 @@ async function readJson(req) {
     chunks.push(bytes);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+async function readSessionId(req) {
+  let body;
+  try {
+    body = await readJson(req);
+  } catch {
+    return void 0;
+  }
+  if (!body || typeof body !== "object" || !("sessionId" in body) || typeof body.sessionId !== "string" || !body.sessionId)
+    return null;
+  return body.sessionId;
 }
 function isSameOrigin(req) {
   const origin = req.headers.origin;
@@ -346,14 +467,12 @@ function registerRoutes(ctx, config) {
             sendJson(res, 200, { suggestion: null, reason: "disabled" });
             return;
           }
-          let body;
-          try {
-            body = await readJson(req);
-          } catch {
+          const sessionId = await readSessionId(req);
+          if (sessionId === void 0) {
             sendJson(res, 400, { suggestion: null, reason: "bad-request" });
             return;
           }
-          if (!body || typeof body !== "object" || !("sessionId" in body) || typeof body.sessionId !== "string" || !body.sessionId) {
+          if (sessionId === null) {
             sendJson(res, 400, { suggestion: null, reason: "missing-session" });
             return;
           }
@@ -364,7 +483,7 @@ function registerRoutes(ctx, config) {
           res.on("close", onClose);
           try {
             const result = await suggestions.suggest(
-              body.sessionId,
+              sessionId,
               resolveSettings(config),
               controller.signal
             );
@@ -381,6 +500,32 @@ function registerRoutes(ctx, config) {
       )
     }),
     "prompt-suggestion route"
+  );
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: "exact",
+      path: TURN_ROUTE,
+      handler: guarded(
+        async (req, res) => {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { turn: null });
+            return;
+          }
+          if (!isSameOrigin(req)) {
+            sendJson(res, 403, { turn: null });
+            return;
+          }
+          const sessionId = await readSessionId(req);
+          if (!sessionId) {
+            sendJson(res, 400, { turn: null });
+            return;
+          }
+          sendJson(res, 200, { turn: suggestions.turn(sessionId, resolveSettings(config)) });
+        },
+        { turn: null }
+      )
+    }),
+    "prompt-suggestion turn route"
   );
   ctx.effect(
     () => ctx.webServer.register({

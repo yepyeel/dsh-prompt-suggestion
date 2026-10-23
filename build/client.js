@@ -45,12 +45,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
 // src/shared/defaults.ts
-var DEFAULT_PROMPT, SETTINGS_NS, LOCALE_NS, ROUTE, MODELS_ROUTE, DEFAULT_CONTEXT_MESSAGES, MIN_CONTEXT_MESSAGES, MAX_CONTEXT_MESSAGES, CLIENT_REQUEST_TIMEOUT_MS, DEBOUNCE_MS, IDLE_RETRY_MS, MAX_IDLE_RETRIES;
+var DEFAULT_PROMPT, SETTINGS_NS, LOCALE_NS, ROUTE, MODELS_ROUTE, TURN_ROUTE, PREDICTION_CACHE_SIZE, DEFAULT_CONTEXT_MESSAGES, MIN_CONTEXT_MESSAGES, MAX_CONTEXT_MESSAGES, CLIENT_REQUEST_TIMEOUT_MS, DEBOUNCE_MS, IDLE_RETRY_MS, MAX_IDLE_RETRIES;
 var init_defaults = __esm({
   "src/shared/defaults.ts"() {
     "use strict";
     DEFAULT_PROMPT = `你是一个输入预测器。下面是用户与编码 Agent 的对话记录。
 只在对话提供足够依据时，预测用户接下来最可能输入的一条具体、有价值的消息。
+记录中的「工具」条目是助手执行过的操作摘要（调用了什么、改了哪个文件、命令是否失败），可作为判断下一步的线索。
 
 规则：
 - 如果上下文不足、无法确定具体的下一步，或任务已结束且没有明确后续，只输出 NO_SUGGESTION。这是正常结果，不必强行给出建议。
@@ -65,6 +66,8 @@ var init_defaults = __esm({
     LOCALE_NS = "settings.promptSuggestion";
     ROUTE = "/prompt-suggestion/suggest";
     MODELS_ROUTE = "/prompt-suggestion/models";
+    TURN_ROUTE = "/prompt-suggestion/turn";
+    PREDICTION_CACHE_SIZE = 32;
     DEFAULT_CONTEXT_MESSAGES = 16;
     MIN_CONTEXT_MESSAGES = 2;
     MAX_CONTEXT_MESSAGES = 64;
@@ -211,6 +214,42 @@ var init_commands = __esm({
   }
 });
 
+// src/client/ghost/prediction-cache.ts
+var PredictionCache;
+var init_prediction_cache = __esm({
+  "src/client/ghost/prediction-cache.ts"() {
+    "use strict";
+    init_defaults();
+    PredictionCache = class {
+      constructor(limit = PREDICTION_CACHE_SIZE) {
+        __publicField(this, "limit", limit);
+        __publicField(this, "entries", /* @__PURE__ */ new Map());
+      }
+      get(sessionId) {
+        return this.entries.get(sessionId);
+      }
+      set(sessionId, entry) {
+        this.entries.delete(sessionId);
+        this.entries.set(sessionId, entry);
+        while (this.entries.size > this.limit) {
+          const oldest = this.entries.keys().next().value;
+          if (oldest === void 0) break;
+          this.entries.delete(oldest);
+        }
+      }
+      delete(sessionId) {
+        this.entries.delete(sessionId);
+      }
+      clear() {
+        this.entries.clear();
+      }
+      get size() {
+        return this.entries.size;
+      }
+    };
+  }
+});
+
 // src/client/styles/ghost.ts
 var GHOST_CSS;
 var init_ghost = __esm({
@@ -266,7 +305,40 @@ function findComposer(node) {
   while (current && !current.querySelector(PLACEHOLDER_SELECTOR)) current = current.parentElement;
   return current;
 }
-function measureComposer(root) {
+function countLines(text, width, style, lineHeight) {
+  if (!text || width <= 0) return 1;
+  const probe = document.createElement("div");
+  Object.assign(probe.style, {
+    position: "absolute",
+    visibility: "hidden",
+    pointerEvents: "none",
+    left: "-10000px",
+    top: "0",
+    width: `${width}px`,
+    font: style.font,
+    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight,
+    whiteSpace: "normal",
+    wordBreak: "break-word"
+  });
+  probe.textContent = text;
+  document.body.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  return Math.max(1, Math.min(MAX_GHOST_LINES, Math.round(height / lineHeight)));
+}
+function px(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function scrollCapLines(placeholder, top, lineHeight) {
+  const scroll = placeholder.closest("[data-input-scroll]");
+  if (!scroll) return MAX_GHOST_LINES;
+  const cap = px(getComputedStyle(scroll).maxHeight);
+  if (!cap) return MAX_GHOST_LINES;
+  return Math.max(1, Math.floor((cap - top) / lineHeight));
+}
+function measureComposer(root, text = "") {
   const card = findComposer(root);
   const placeholder = card?.querySelector(PLACEHOLDER_SELECTOR);
   if (!placeholder) return null;
@@ -275,8 +347,13 @@ function measureComposer(root) {
   if (rect.width === 0 || rect.height === 0) return null;
   const style = getComputedStyle(placeholder);
   const lineHeight = Number.parseFloat(style.lineHeight) || 24;
-  const toolbar = placeholder.parentElement?.parentElement?.nextElementSibling;
-  const limit = toolbar ? toolbar.getBoundingClientRect().top : rect.bottom;
+  const key = root.querySelector(".dsh-ps-keyWrap")?.getBoundingClientRect().width;
+  const reserve = key ? key + 8 : KEY_RESERVE_PX;
+  const offset = rect.top - (placeholder.parentElement?.getBoundingClientRect().top ?? rect.top);
+  const lines = Math.min(
+    countLines(text, rect.width - reserve, style, lineHeight),
+    scrollCapLines(placeholder, offset, lineHeight)
+  );
   return {
     left: rect.left - origin.left,
     top: rect.top - origin.top,
@@ -285,8 +362,28 @@ function measureComposer(root) {
     lineHeight: style.lineHeight,
     letterSpacing: style.letterSpacing,
     color: style.color,
-    maxLines: Math.max(1, Math.min(3, Math.floor((limit - rect.top - 2) / lineHeight))),
+    maxLines: lines,
     lineHeightPx: `${lineHeight}px`
+  };
+}
+function reserveEditorLines(root) {
+  const editor = findComposer(root)?.querySelector(EDITOR_SELECTOR);
+  if (!editor) return { apply: (_lines, _lineHeight) => {
+  }, restore: () => {
+  } };
+  const original = editor.style.minHeight;
+  const computed = getComputedStyle(editor);
+  const base = px(computed.minHeight);
+  const padding = px(computed.paddingTop) + px(computed.paddingBottom);
+  return {
+    apply(lines, lineHeight) {
+      const needed = Math.ceil(padding + lines * lineHeight);
+      const next = needed > base ? `${needed}px` : original;
+      if (editor.style.minHeight !== next) editor.style.minHeight = next;
+    },
+    restore() {
+      editor.style.minHeight = original;
+    }
   };
 }
 function concealPlaceholder(root) {
@@ -348,17 +445,19 @@ function listenPredictionShortcut(root, request2) {
   window.addEventListener("keydown", onKeyDown, true);
   return () => window.removeEventListener("keydown", onKeyDown, true);
 }
-var PLACEHOLDER_SELECTOR, EDITOR_SELECTOR;
+var PLACEHOLDER_SELECTOR, EDITOR_SELECTOR, MAX_GHOST_LINES, KEY_RESERVE_PX;
 var init_composer = __esm({
   "src/client/dsh/composer.ts"() {
     "use strict";
     PLACEHOLDER_SELECTOR = "[data-composer-placeholder]";
     EDITOR_SELECTOR = '[contenteditable="true"]';
+    MAX_GHOST_LINES = 3;
+    KEY_RESERVE_PX = 40;
   }
 });
 
 // src/client/ghost/use-composer.ts
-function useComposer(root, shown, sessionId, controller, accept) {
+function useComposer(root, text, sessionId, controller, accept) {
   const [box, setBox] = (0, import_react.useState)(null);
   (0, import_react.useLayoutEffect)(() => {
     if (!root.current || !sessionId) return;
@@ -371,16 +470,18 @@ function useComposer(root, shown, sessionId, controller, accept) {
   }, [root, sessionId, controller]);
   (0, import_react.useLayoutEffect)(() => {
     const node = root.current;
-    if (!shown || !node || !sessionId) {
+    if (text === void 0 || !node || !sessionId) {
       setBox(null);
       return;
     }
+    const reservation = reserveEditorLines(node);
     const update = () => {
-      const measured = measureComposer(node);
+      const measured = measureComposer(node, text);
       if (!measured) {
         controller.dismiss();
         return;
       }
+      reservation.apply(measured.maxLines, Number.parseFloat(measured.lineHeightPx));
       setBox(measured);
     };
     update();
@@ -393,12 +494,13 @@ function useComposer(root, shown, sessionId, controller, accept) {
     window.addEventListener("scroll", update, true);
     return () => {
       restore();
+      reservation.restore();
       unlisten();
       observer?.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [root, shown, sessionId, controller, accept]);
+  }, [root, text, sessionId, controller, accept]);
   return box;
 }
 var import_react;
@@ -437,6 +539,17 @@ var init_contracts = __esm({
 function record(value) {
   return value !== null && typeof value === "object";
 }
+function turnOf(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : void 0;
+}
+function sessionBody(sessionId) {
+  const body = { sessionId };
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  };
+}
 async function request(path, options, signal) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -464,23 +577,24 @@ var init_api = __esm({
     init_defaults();
     api = {
       async suggest(sessionId, signal) {
-        const body = { sessionId };
-        const data = await request(
-          ROUTE,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body)
-          },
-          signal
-        );
+        const data = await request(ROUTE, sessionBody(sessionId), signal);
         if (record(data) && (data.suggestion === null || typeof data.suggestion === "string")) {
-          if (typeof data.model === "string") return { suggestion: data.suggestion, model: data.model };
+          if (typeof data.model === "string") {
+            const turn = turnOf(data.turn);
+            return turn === void 0 ? { suggestion: data.suggestion, model: data.model } : { suggestion: data.suggestion, model: data.model, turn };
+          }
           if (data.suggestion === null && SUGGEST_REASONS.includes(data.reason)) {
             return { suggestion: null, reason: data.reason };
           }
         }
         throw new Error("Invalid suggestion response");
+      },
+      /** The Session's latest completed turn, used to revalidate a cached candidate. */
+      async turn(sessionId, signal) {
+        const data = await request(TURN_ROUTE, sessionBody(sessionId), signal);
+        if (!record(data) || data.turn !== null && turnOf(data.turn) === void 0)
+          throw new Error("Invalid turn response");
+        return data.turn === null ? null : turnOf(data.turn) ?? null;
       },
       async models(signal) {
         const data = await request(MODELS_ROUTE, {}, signal);
@@ -505,8 +619,9 @@ var init_controller = __esm({
   "src/client/ghost/controller.ts"() {
     "use strict";
     init_defaults();
+    init_prediction_cache();
     PredictionController = class {
-      constructor(suggest) {
+      constructor(suggest, options = {}) {
         __publicField(this, "suggest", suggest);
         __publicField(this, "context");
         __publicField(this, "generation", 0);
@@ -515,8 +630,13 @@ var init_controller = __esm({
         __publicField(this, "composing", false);
         __publicField(this, "timer");
         __publicField(this, "active");
+        __publicField(this, "detached", /* @__PURE__ */ new Set());
+        __publicField(this, "disposed", false);
         __publicField(this, "state", { kind: "idle" });
+        __publicField(this, "shownTurn");
         __publicField(this, "listeners", /* @__PURE__ */ new Set());
+        __publicField(this, "cache");
+        __publicField(this, "checkTurn");
         __publicField(this, "getSnapshot", () => this.state);
         __publicField(this, "subscribe", (listener) => {
           this.listeners.add(listener);
@@ -543,17 +663,37 @@ var init_controller = __esm({
           this.cancel();
           this.publish({ kind: "dismissed" });
         });
+        this.cache = options.cache ?? new PredictionCache();
+        this.checkTurn = options.checkTurn;
       }
-      publish(state) {
+      publish(state, turn) {
         this.state = state;
+        this.shownTurn = state.kind === "shown" ? turn : void 0;
         for (const listener of this.listeners) listener();
       }
       cancel() {
         this.requestId += 1;
         clearTimeout(this.timer);
         this.timer = void 0;
-        this.active?.abort();
+        this.active?.controller.abort();
         this.active = void 0;
+      }
+      abortDetached() {
+        for (const controller of this.detached) controller.abort();
+        this.detached.clear();
+      }
+      /**
+       * Leaving a Session: keep its unconsumed candidate, and let an in-flight model
+       * request finish into the cache instead of throwing the paid call away.
+       */
+      stash(sessionId) {
+        if (!sessionId) return;
+        if (this.state.kind === "shown" && this.shownTurn !== void 0)
+          this.cache.set(sessionId, { text: this.state.text, turn: this.shownTurn });
+        if (this.active?.detachable) {
+          this.detached.add(this.active.controller);
+          this.active = void 0;
+        }
       }
       eligible(ignoreDismissed = false) {
         return Boolean(
@@ -564,14 +704,22 @@ var init_controller = __esm({
         const previous = this.context;
         this.context = context;
         if (!previous || previous.sessionId !== context.sessionId) {
+          this.stash(previous?.sessionId);
           this.cancel();
           this.generation += 1;
           this.dismissed = false;
           this.composing = false;
           this.publish({ kind: "idle" });
+          this.restore();
           return;
         }
         if (previous.enabled !== context.enabled || previous.automatic !== context.automatic) {
+          if (!context.enabled) {
+            this.cache.clear();
+            this.abortDetached();
+          } else if (context.sessionId) {
+            this.cache.delete(context.sessionId);
+          }
           this.cancel();
           this.generation += 1;
           this.dismissed = false;
@@ -581,6 +729,7 @@ var init_controller = __esm({
         if (!context.enabled) return;
         if (context.running) {
           if (!previous.running) {
+            if (context.sessionId) this.cache.delete(context.sessionId);
             this.cancel();
             this.generation += 1;
             this.dismissed = false;
@@ -595,6 +744,39 @@ var init_controller = __esm({
         if (previous.running && context.automatic && this.eligible()) {
           this.schedule(0, DEBOUNCE_MS);
         }
+      }
+      /** Show a stashed candidate again only if its turn is still the latest one. */
+      restore() {
+        const sessionId = this.context?.sessionId;
+        if (!sessionId) return;
+        const entry = this.cache.get(sessionId);
+        if (!entry) return;
+        const checkTurn = this.checkTurn;
+        if (!checkTurn || !this.eligible()) {
+          this.cache.delete(sessionId);
+          return;
+        }
+        const generation = this.generation;
+        const id = ++this.requestId;
+        const controller = new AbortController();
+        this.active = { controller, detachable: false };
+        void (async () => {
+          let turn = null;
+          try {
+            turn = await checkTurn(sessionId, controller.signal);
+          } catch {
+          } finally {
+            if (this.active?.controller === controller) this.active = void 0;
+          }
+          const current = this.eligible() && !controller.signal.aborted && this.requestId === id && this.generation === generation && this.context?.sessionId === sessionId;
+          if (!current) {
+            if (this.context?.sessionId === sessionId) this.cache.delete(sessionId);
+            return;
+          }
+          this.cache.delete(sessionId);
+          if (turn === entry.turn && this.state.kind === "idle")
+            this.publish({ kind: "shown", text: entry.text }, entry.turn);
+        })();
       }
       accept(insert) {
         if (this.state.kind !== "shown" || !this.eligible()) return false;
@@ -620,6 +802,15 @@ var init_controller = __esm({
           void this.run(attempt);
         }, delay);
       }
+      /** A detached request finished after its Session lost focus. */
+      keep(sessionId, response, signal) {
+        const text = response.suggestion?.trim();
+        if (signal.aborted || !text || response.turn === void 0) return;
+        if (this.context && !this.context.enabled) return;
+        this.cache.set(sessionId, { text, turn: response.turn });
+        if (!this.disposed && this.context?.sessionId === sessionId && this.state.kind === "idle" && !this.timer && !this.active)
+          this.restore();
+      }
       async run(attempt) {
         this.timer = void 0;
         const sessionId = this.context?.sessionId;
@@ -627,29 +818,37 @@ var init_controller = __esm({
         const generation = this.generation;
         const id = ++this.requestId;
         const controller = new AbortController();
-        this.active = controller;
+        this.active = { controller, detachable: true };
         const current = () => this.eligible() && !controller.signal.aborted && this.requestId === id && this.generation === generation && this.context?.sessionId === sessionId;
         this.publish({ kind: "requesting" });
         try {
           const response = await this.suggest(sessionId, controller.signal);
+          if (this.detached.delete(controller)) {
+            this.keep(sessionId, response, controller.signal);
+            return;
+          }
           if (!current()) return;
           if (response.reason === "not-idle" && attempt < MAX_IDLE_RETRIES) {
             this.schedule(attempt + 1, IDLE_RETRY_MS);
             return;
           }
           const text = response.suggestion?.trim();
-          this.publish(text ? { kind: "shown", text } : { kind: "idle" });
+          this.publish(text ? { kind: "shown", text } : { kind: "idle" }, response.turn);
         } catch {
+          this.detached.delete(controller);
           if (current()) this.publish({ kind: "idle" });
         } finally {
-          if (this.active === controller) this.active = void 0;
+          if (this.active?.controller === controller) this.active = void 0;
         }
       }
       dispose() {
+        this.stash(this.context?.sessionId);
+        this.disposed = true;
         this.cancel();
         this.context = void 0;
         this.composing = false;
         this.state = { kind: "idle" };
+        this.shownTurn = void 0;
         this.listeners.clear();
       }
     };
@@ -657,11 +856,13 @@ var init_controller = __esm({
 });
 
 // src/client/ghost/use-prediction.ts
-function usePrediction({ useInput, useSession, sessionId }, { enabled = true, automatic = true, controls } = {}) {
+function usePrediction({ useInput, useSession, sessionId }, { enabled = true, automatic = true, controls, cache } = {}) {
   const input = useInput((snapshot) => snapshot);
   const running = useSession((snapshot) => snapshot?.running === true);
   const blank = Boolean(input) && !input?.draft?.trim() && !input?.attachmentIds?.length;
-  const [controller] = (0, import_react2.useState)(() => new PredictionController(api.suggest));
+  const [controller] = (0, import_react2.useState)(
+    () => new PredictionController(api.suggest, { cache, checkTurn: api.turn })
+  );
   const state = (0, import_react2.useSyncExternalStore)(controller.subscribe, controller.getSnapshot);
   (0, import_react2.useLayoutEffect)(() => {
     controller.update({ sessionId, running, blank, enabled, automatic });
@@ -687,6 +888,7 @@ var init_use_prediction = __esm({
 function ConfiguredPromptGhost({
   form,
   controls,
+  cache,
   ...props
 }) {
   const snapshot = (0, import_react3.useSyncExternalStore)(
@@ -698,19 +900,28 @@ function ConfiguredPromptGhost({
     controls.subscribe,
     () => controls.getAutomatic(props.sessionId)
   );
-  return /* @__PURE__ */ React.createElement(PromptGhost, { ...props, enabled, automatic, controls });
+  return /* @__PURE__ */ React.createElement(
+    PromptGhost,
+    {
+      ...props,
+      enabled,
+      automatic,
+      controls,
+      cache
+    }
+  );
 }
 function PromptGhost(props) {
   const root = (0, import_react3.useRef)(null);
   const { state, controller } = usePrediction(props, props);
   const accept = (0, import_react3.useCallback)(() => {
-    controller.accept((text) => {
+    controller.accept((text2) => {
       const span = props.inputActions.captureInsertion();
-      return props.inputActions.insertText(text, span);
+      return props.inputActions.insertText(text2, span);
     });
   }, [controller, props.inputActions]);
-  const shown = state.kind === "shown";
-  const box = useComposer(root, shown, props.sessionId, controller, accept);
+  const text = state.kind === "shown" ? state.text : void 0;
+  const box = useComposer(root, text, props.sessionId, controller, accept);
   return /* @__PURE__ */ React.createElement("div", { ref: root, className: "dsh-ps-root" }, /* @__PURE__ */ React.createElement("style", null, GHOST_CSS), state.kind === "shown" && box && /* @__PURE__ */ React.createElement(
     "div",
     {
@@ -1700,8 +1911,10 @@ function apply(ctx) {
   const form = ctx.configForms.get(SETTINGS_NS);
   const controls = createSessionControls();
   ctx.effect(() => () => controls.dispose(), "prompt-suggestion: session controls");
+  const cache = new PredictionCache();
+  ctx.effect(() => () => cache.clear(), "prompt-suggestion: prediction cache");
   const SettingsEntry = () => (0, import_react6.createElement)(SettingsPage, { form, t });
-  const GhostEntry = (props) => (0, import_react6.createElement)(ConfiguredPromptGhost, { ...props, form, controls });
+  const GhostEntry = (props) => (0, import_react6.createElement)(ConfiguredPromptGhost, { ...props, form, controls, cache });
   ctx.slots.inject(
     "conversation.input.overlay",
     () => ctx.slots.register(
@@ -1733,6 +1946,7 @@ var init_index = __esm({
     init_defaults();
     init_nav_icon();
     init_commands();
+    init_prediction_cache();
     init_prompt_ghost();
     init_session_controls();
     init_locales();
