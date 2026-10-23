@@ -46,6 +46,7 @@ export class PredictionController {
   private listeners = new Set<() => void>()
   private readonly cache: PredictionCache
   private readonly checkTurn?: CheckTurn
+  private readonly unsubscribeCache: () => void
 
   constructor(
     private readonly suggest: Suggest,
@@ -53,6 +54,9 @@ export class PredictionController {
   ) {
     this.cache = options.cache ?? new PredictionCache()
     this.checkTurn = options.checkTurn
+    this.unsubscribeCache = this.cache.subscribe((sessionId) => {
+      if (sessionId === this.context?.sessionId) this.restore()
+    })
   }
 
   getSnapshot = (): PredictionState => this.state
@@ -117,6 +121,8 @@ export class PredictionController {
       this.dismissed = false
       this.composing = false
       this.publish({ kind: 'idle' })
+      // A running Session will end on a newer turn, so its entry is already stale.
+      if (context.running && context.sessionId) this.cache.delete(context.sessionId)
       this.restore()
       return
     }
@@ -145,52 +151,66 @@ export class PredictionController {
       return
     }
     if (!context.blank) {
-      this.dismiss()
+      // Dismiss on the edit itself (or over a live candidate), not on every
+      // snapshot while a draft exists, so a lagging snapshot keeps the cache.
+      if (previous.blank || this.state.kind === 'shown' || this.state.kind === 'requesting')
+        this.dismiss()
       return
     }
     if (previous.running && context.automatic && this.eligible()) {
       this.schedule(0, DEBOUNCE_MS)
-    }
-  }
-
-  /** Show a stashed candidate again only if its turn is still the latest one. */
-  private restore() {
-    const sessionId = this.context?.sessionId
-    if (!sessionId) return
-    const entry = this.cache.get(sessionId)
-    if (!entry) return
-    const checkTurn = this.checkTurn
-    if (!checkTurn || !this.eligible()) {
-      this.cache.delete(sessionId)
       return
     }
+    // The input snapshot can lag a Session switch; retry once it settles.
+    this.restore()
+  }
+
+  /**
+   * Show a stashed candidate again only if its turn is still the latest one.
+   * Safe to call repeatedly: it only acts while idle with nothing pending, and
+   * an ineligible moment (snapshot not settled yet) leaves the entry for later.
+   */
+  private restore() {
+    const sessionId = this.context?.sessionId
+    const checkTurn = this.checkTurn
+    if (
+      this.disposed ||
+      !sessionId ||
+      !checkTurn ||
+      this.state.kind !== 'idle' ||
+      this.timer ||
+      this.active ||
+      !this.eligible()
+    )
+      return
+    const entry = this.cache.get(sessionId)
+    if (!entry) return
     const generation = this.generation
     const id = ++this.requestId
     const controller = new AbortController()
     this.active = { controller, detachable: false }
     void (async () => {
-      let turn: number | null = null
+      let turn: number | null | undefined
       try {
         turn = await checkTurn(sessionId, controller.signal)
       } catch {
-        /* An unverifiable candidate is simply not shown. */
+        /* An unverifiable candidate is simply not shown this time. */
       } finally {
         if (this.active?.controller === controller) this.active = undefined
       }
+      // A newer turn makes the entry worthless; anything else may be retried.
+      if (typeof turn === 'number' && turn !== entry.turn && this.cache.get(sessionId) === entry)
+        this.cache.delete(sessionId)
       const current =
         this.eligible() &&
         !controller.signal.aborted &&
         this.requestId === id &&
         this.generation === generation &&
-        this.context?.sessionId === sessionId
-      if (!current) {
-        // A switch away keeps the entry for the next visit; anything else consumes it.
-        if (this.context?.sessionId === sessionId) this.cache.delete(sessionId)
-        return
-      }
-      this.cache.delete(sessionId)
-      if (turn === entry.turn && this.state.kind === 'idle')
-        this.publish({ kind: 'shown', text: entry.text }, entry.turn)
+        this.context?.sessionId === sessionId &&
+        this.state.kind === 'idle'
+      if (!current || turn !== entry.turn) return
+      if (this.cache.get(sessionId) === entry) this.cache.delete(sessionId)
+      this.publish({ kind: 'shown', text: entry.text }, entry.turn)
     })()
   }
 
@@ -212,6 +232,10 @@ export class PredictionController {
   }
 
   dismiss = () => {
+    this.consume()
+    // Every keystroke fires several input events; republishing an unchanged
+    // dismissed state would only re-render the overlay for nothing.
+    if (this.dismissed && this.state.kind === 'dismissed' && !this.timer && !this.active) return
     this.dismissed = true
     this.cancel()
     this.publish({ kind: 'dismissed' })
@@ -220,6 +244,7 @@ export class PredictionController {
   accept(insert: (text: string) => boolean): boolean {
     if (this.state.kind !== 'shown' || !this.eligible()) return false
     const text = this.state.text
+    this.consume()
     this.dismissed = true
     this.cancel()
     let accepted = false
@@ -230,6 +255,11 @@ export class PredictionController {
     }
     this.publish({ kind: accepted ? 'accepted' : 'dismissed' })
     return accepted
+  }
+
+  /** The user acted on this Session's input; a stashed candidate no longer applies. */
+  private consume() {
+    if (this.context?.sessionId) this.cache.delete(this.context.sessionId)
   }
 
   private schedule(attempt: number, delay: number) {
@@ -253,15 +283,8 @@ export class PredictionController {
     const text = response.suggestion?.trim()
     if (signal.aborted || !text || response.turn === undefined) return
     if (this.context && !this.context.enabled) return
+    // Notifies every composer; the one showing this Session restores it.
     this.cache.set(sessionId, { text, turn: response.turn })
-    if (
-      !this.disposed &&
-      this.context?.sessionId === sessionId &&
-      this.state.kind === 'idle' &&
-      !this.timer &&
-      !this.active
-    )
-      this.restore()
   }
 
   private async run(attempt: number) {
@@ -310,5 +333,6 @@ export class PredictionController {
     this.state = { kind: 'idle' }
     this.shownTurn = undefined
     this.listeners.clear()
+    this.unsubscribeCache()
   }
 }

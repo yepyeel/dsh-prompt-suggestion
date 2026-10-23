@@ -358,19 +358,68 @@ describe('prediction cache across session switches', () => {
     expect(cache.get('one')).toBeUndefined()
   })
 
-  it.each(['running', 'draft'] as const)(
-    'does not restore into a session that is %s',
-    async (condition) => {
-      update('one')
-      await finishTurn('one')
-      update('two')
-      update('one', condition === 'running', condition !== 'draft')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(checkTurn).not.toHaveBeenCalled()
-      expect(controller.getSnapshot().kind).not.toBe('shown')
-      expect(cache.get('one')).toBeUndefined()
-    },
-  )
+  it('waits for a lagging input snapshot instead of dropping the cached prediction', async () => {
+    update('one')
+    await finishTurn('one')
+    update('two')
+    // Right after a switch the draft snapshot may not have settled yet.
+    update('one', false, false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(checkTurn).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().kind).not.toBe('shown')
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next for one' })
+  })
+
+  it('never restores into a running session, and a new turn drops the entry', async () => {
+    update('one')
+    await finishTurn('one')
+    update('two')
+    update('one', true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(checkTurn).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().kind).toBe('idle')
+    turns.set('one', 6)
+    suggest.mockResolvedValueOnce({ suggestion: null, model: 'fixture/test', turn: 6 })
+    update('one')
+    await vi.advanceTimersByTimeAsync(250)
+    expect(controller.getSnapshot().kind).toBe('idle')
+    expect(cache.get('one')).toBeUndefined()
+  })
+
+  it('restores a result that lands after the composer was remounted for the session', async () => {
+    const pending = deferred<SuggestResponse>()
+    suggest.mockReturnValueOnce(pending.promise)
+    update('one')
+    await finishTurn('one')
+    // Session-scoped slots remount: the old composer goes away mid-request...
+    controller.dispose()
+    controller = new PredictionController(suggest, { cache, checkTurn })
+    // ...and the user is already back on this Session when the result arrives.
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot().kind).toBe('idle')
+    pending.resolve({ suggestion: 'late for one', model: 'fixture/test', turn: 5 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'late for one' })
+    expect(cache.get('one')).toBeUndefined()
+  })
+
+  it('keeps an entry whose turn cannot be read yet and retries later', async () => {
+    update('one')
+    await finishTurn('one')
+    update('two')
+    turns.set('one', null)
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot().kind).toBe('idle')
+    expect(cache.get('one')).toBeDefined()
+    turns.set('one', 5)
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next for one' })
+  })
 
   it('does not cache consumed predictions', async () => {
     update('one')

@@ -13,8 +13,20 @@ export interface CachedPrediction {
  */
 export class PredictionCache {
   private entries = new Map<string, CachedPrediction>()
+  private listeners = new Set<(sessionId: string) => void>()
 
   constructor(private readonly limit = PREDICTION_CACHE_SIZE) {}
+
+  /**
+   * Notified after every write. A request that finishes after its composer was
+   * remounted lands here, and the composer now showing that Session picks it up.
+   */
+  subscribe(listener: (sessionId: string) => void) {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
 
   get(sessionId: string) {
     return this.entries.get(sessionId)
@@ -28,6 +40,7 @@ export class PredictionCache {
       if (oldest === undefined) break
       this.entries.delete(oldest)
     }
+    for (const listener of [...this.listeners]) listener(sessionId)
   }
 
   delete(sessionId: string) {

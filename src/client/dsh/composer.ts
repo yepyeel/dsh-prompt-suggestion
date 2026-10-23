@@ -129,9 +129,15 @@ export function concealPlaceholder(root: HTMLElement) {
   }
 }
 
-export function listenComposerKeys(root: HTMLElement, accept: () => void, dismiss: () => void) {
+export function listenComposerKeys(
+  root: HTMLElement,
+  accept: () => void,
+  dismiss: () => void,
+  visible: () => boolean = () => true,
+) {
   const onKeyDown = (event: KeyboardEvent) => {
     if (
+      !visible() ||
       event.isComposing ||
       event.keyCode === 229 ||
       event.metaKey ||

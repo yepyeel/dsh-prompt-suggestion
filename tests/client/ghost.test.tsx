@@ -172,6 +172,31 @@ describe('composer integration', () => {
     expect(editor.style.minHeight).toBe('')
   })
 
+  it('keeps the candidate while the composer is hidden and shows it again when visible', async () => {
+    const view = await show()
+    const editor = view.getByRole('textbox', { name: 'Composer' })
+    const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
+    const original = measure.getMockImplementation()
+    // A kept-alive background composer measures as an empty box.
+    measure.mockImplementation(function (this: HTMLElement) {
+      return { ...(original?.call(this) as DOMRect), width: 0, height: 0 }
+    })
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+    editor.focus()
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(true)
+    expect(actions.insertText).not.toHaveBeenCalled()
+    measure.mockImplementation(original as never)
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(view.container.querySelector('.dsh-ps-text')?.textContent).toBe('继续测试')
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false)
+    expect(actions.insertText).toHaveBeenCalledExactlyOnceWith('继续测试', { revision: 7 })
+  })
+
   it('ignores modified keys and IME key events, and restores the placeholder on Escape', async () => {
     const view = await show()
     const editor = view.getByRole('textbox', { name: 'Composer' })
@@ -296,6 +321,60 @@ describe('composer integration', () => {
     fireEvent.keyDown(window, { key: 'Tab' })
     expect(actions.insertText).not.toHaveBeenCalled()
   })
+
+  it.each(['after', 'before'] as const)(
+    'restores a request that finishes %s switching back, with session-keyed remounts',
+    async (order) => {
+      // DSH keys strict session slot entries by Session, so a switch remounts the ghost.
+      const Keyed = () => (
+        <div>
+          <div>
+            <div>
+              <span data-composer-placeholder="" style={{ visibility: 'visible' }}>
+                placeholder
+              </span>
+            </div>
+          </div>
+          <div data-toolbar="" />
+          {/* biome-ignore lint/a11y/useSemanticElements: Match DSH's contenteditable composer in this integration fixture. */}
+          <div contentEditable suppressContentEditableWarning tabIndex={0} role="textbox" />
+          <Ghost key={sessionId} {...props()} />
+        </div>
+      )
+      let resolve!: (value: SuggestResponse) => void
+      vi.mocked(api.suggest).mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done
+        }),
+      )
+      const turn = vi.spyOn(api, 'turn').mockResolvedValue(5)
+      const view = render(<Keyed />)
+      running = false
+      view.rerender(<Keyed />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250)
+      })
+      expect(api.suggest).toHaveBeenCalledTimes(1)
+      sessionId = 'two'
+      view.rerender(<Keyed />)
+      const land = async () => {
+        await act(async () => {
+          resolve({ suggestion: 'late for one', model: 'fixture/model', turn: 5 })
+          await vi.advanceTimersByTimeAsync(0)
+        })
+      }
+      if (order === 'after') await land()
+      expect(view.container.querySelector('.dsh-ps-text')).toBeNull()
+      sessionId = 'one'
+      view.rerender(<Keyed />)
+      if (order === 'before') await land()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(turn).toHaveBeenCalledWith('one', expect.any(AbortSignal))
+      expect(view.container.querySelector('.dsh-ps-text')?.textContent).toBe('late for one')
+    },
+  )
 
   it('does not capture keys outside the active composer', async () => {
     await show()

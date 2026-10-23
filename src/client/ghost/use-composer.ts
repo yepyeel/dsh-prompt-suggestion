@@ -37,10 +37,15 @@ export function useComposer(
       return
     }
     const reservation = reserveEditorLines(node)
+    let visible = false
     const update = () => {
       const measured = measureComposer(node, text)
+      visible = measured !== null
       if (!measured) {
-        controller.dismiss()
+        // Hidden (e.g. a kept-alive composer of a background Session) or not yet
+        // laid out: keep the candidate and show it once the composer reappears.
+        reservation.restore()
+        setBox(null)
         return
       }
       reservation.apply(measured.maxLines, Number.parseFloat(measured.lineHeightPx))
@@ -48,7 +53,7 @@ export function useComposer(
     }
     update()
     const restore = concealPlaceholder(node)
-    const unlisten = listenComposerKeys(node, accept, controller.dismiss)
+    const unlisten = listenComposerKeys(node, accept, controller.dismiss, () => visible)
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
     const card = findComposer(node)
     if (card) observer?.observe(card)
