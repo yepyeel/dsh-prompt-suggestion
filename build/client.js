@@ -224,6 +224,17 @@ var init_prediction_cache = __esm({
       constructor(limit = PREDICTION_CACHE_SIZE) {
         __publicField(this, "limit", limit);
         __publicField(this, "entries", /* @__PURE__ */ new Map());
+        __publicField(this, "listeners", /* @__PURE__ */ new Set());
+      }
+      /**
+       * Notified after every write. A request that finishes after its composer was
+       * remounted lands here, and the composer now showing that Session picks it up.
+       */
+      subscribe(listener) {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
       }
       get(sessionId) {
         return this.entries.get(sessionId);
@@ -236,6 +247,7 @@ var init_prediction_cache = __esm({
           if (oldest === void 0) break;
           this.entries.delete(oldest);
         }
+        for (const listener of [...this.listeners]) listener(sessionId);
       }
       delete(sessionId) {
         this.entries.delete(sessionId);
@@ -396,9 +408,9 @@ function concealPlaceholder(root) {
     placeholder.style.visibility = original;
   };
 }
-function listenComposerKeys(root, accept, dismiss) {
+function listenComposerKeys(root, accept, dismiss, visible = () => true) {
   const onKeyDown = (event) => {
-    if (event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey)
+    if (!visible() || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey)
       return;
     const editor = findComposer(root)?.querySelector(EDITOR_SELECTOR);
     const active = document.activeElement;
@@ -475,10 +487,13 @@ function useComposer(root, text, sessionId, controller, accept) {
       return;
     }
     const reservation = reserveEditorLines(node);
+    let visible = false;
     const update = () => {
       const measured = measureComposer(node, text);
+      visible = measured !== null;
       if (!measured) {
-        controller.dismiss();
+        reservation.restore();
+        setBox(null);
         return;
       }
       reservation.apply(measured.maxLines, Number.parseFloat(measured.lineHeightPx));
@@ -486,7 +501,7 @@ function useComposer(root, text, sessionId, controller, accept) {
     };
     update();
     const restore = concealPlaceholder(node);
-    const unlisten = listenComposerKeys(node, accept, controller.dismiss);
+    const unlisten = listenComposerKeys(node, accept, controller.dismiss, () => visible);
     const observer = typeof ResizeObserver === "undefined" ? void 0 : new ResizeObserver(update);
     const card = findComposer(node);
     if (card) observer?.observe(card);
@@ -637,6 +652,7 @@ var init_controller = __esm({
         __publicField(this, "listeners", /* @__PURE__ */ new Set());
         __publicField(this, "cache");
         __publicField(this, "checkTurn");
+        __publicField(this, "unsubscribeCache");
         __publicField(this, "getSnapshot", () => this.state);
         __publicField(this, "subscribe", (listener) => {
           this.listeners.add(listener);
@@ -659,12 +675,17 @@ var init_controller = __esm({
           this.composing = false;
         });
         __publicField(this, "dismiss", () => {
+          this.consume();
+          if (this.dismissed && this.state.kind === "dismissed" && !this.timer && !this.active) return;
           this.dismissed = true;
           this.cancel();
           this.publish({ kind: "dismissed" });
         });
         this.cache = options.cache ?? new PredictionCache();
         this.checkTurn = options.checkTurn;
+        this.unsubscribeCache = this.cache.subscribe((sessionId) => {
+          if (sessionId === this.context?.sessionId) this.restore();
+        });
       }
       publish(state, turn) {
         this.state = state;
@@ -710,6 +731,7 @@ var init_controller = __esm({
           this.dismissed = false;
           this.composing = false;
           this.publish({ kind: "idle" });
+          if (context.running && context.sessionId) this.cache.delete(context.sessionId);
           this.restore();
           return;
         }
@@ -738,49 +760,52 @@ var init_controller = __esm({
           return;
         }
         if (!context.blank) {
-          this.dismiss();
+          if (previous.blank || this.state.kind === "shown" || this.state.kind === "requesting")
+            this.dismiss();
           return;
         }
         if (previous.running && context.automatic && this.eligible()) {
           this.schedule(0, DEBOUNCE_MS);
-        }
-      }
-      /** Show a stashed candidate again only if its turn is still the latest one. */
-      restore() {
-        const sessionId = this.context?.sessionId;
-        if (!sessionId) return;
-        const entry = this.cache.get(sessionId);
-        if (!entry) return;
-        const checkTurn = this.checkTurn;
-        if (!checkTurn || !this.eligible()) {
-          this.cache.delete(sessionId);
           return;
         }
+        this.restore();
+      }
+      /**
+       * Show a stashed candidate again only if its turn is still the latest one.
+       * Safe to call repeatedly: it only acts while idle with nothing pending, and
+       * an ineligible moment (snapshot not settled yet) leaves the entry for later.
+       */
+      restore() {
+        const sessionId = this.context?.sessionId;
+        const checkTurn = this.checkTurn;
+        if (this.disposed || !sessionId || !checkTurn || this.state.kind !== "idle" || this.timer || this.active || !this.eligible())
+          return;
+        const entry = this.cache.get(sessionId);
+        if (!entry) return;
         const generation = this.generation;
         const id = ++this.requestId;
         const controller = new AbortController();
         this.active = { controller, detachable: false };
         void (async () => {
-          let turn = null;
+          let turn;
           try {
             turn = await checkTurn(sessionId, controller.signal);
           } catch {
           } finally {
             if (this.active?.controller === controller) this.active = void 0;
           }
-          const current = this.eligible() && !controller.signal.aborted && this.requestId === id && this.generation === generation && this.context?.sessionId === sessionId;
-          if (!current) {
-            if (this.context?.sessionId === sessionId) this.cache.delete(sessionId);
-            return;
-          }
-          this.cache.delete(sessionId);
-          if (turn === entry.turn && this.state.kind === "idle")
-            this.publish({ kind: "shown", text: entry.text }, entry.turn);
+          if (typeof turn === "number" && turn !== entry.turn && this.cache.get(sessionId) === entry)
+            this.cache.delete(sessionId);
+          const current = this.eligible() && !controller.signal.aborted && this.requestId === id && this.generation === generation && this.context?.sessionId === sessionId && this.state.kind === "idle";
+          if (!current || turn !== entry.turn) return;
+          if (this.cache.get(sessionId) === entry) this.cache.delete(sessionId);
+          this.publish({ kind: "shown", text: entry.text }, entry.turn);
         })();
       }
       accept(insert) {
         if (this.state.kind !== "shown" || !this.eligible()) return false;
         const text = this.state.text;
+        this.consume();
         this.dismissed = true;
         this.cancel();
         let accepted = false;
@@ -790,6 +815,10 @@ var init_controller = __esm({
         }
         this.publish({ kind: accepted ? "accepted" : "dismissed" });
         return accepted;
+      }
+      /** The user acted on this Session's input; a stashed candidate no longer applies. */
+      consume() {
+        if (this.context?.sessionId) this.cache.delete(this.context.sessionId);
       }
       schedule(attempt, delay) {
         const sessionId = this.context?.sessionId;
@@ -808,8 +837,6 @@ var init_controller = __esm({
         if (signal.aborted || !text || response.turn === void 0) return;
         if (this.context && !this.context.enabled) return;
         this.cache.set(sessionId, { text, turn: response.turn });
-        if (!this.disposed && this.context?.sessionId === sessionId && this.state.kind === "idle" && !this.timer && !this.active)
-          this.restore();
       }
       async run(attempt) {
         this.timer = void 0;
@@ -850,6 +877,7 @@ var init_controller = __esm({
         this.state = { kind: "idle" };
         this.shownTurn = void 0;
         this.listeners.clear();
+        this.unsubscribeCache();
       }
     };
   }
