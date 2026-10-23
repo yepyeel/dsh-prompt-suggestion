@@ -40,9 +40,15 @@ export const SUGGEST_REASONS = [
 
 export type SuggestReason = (typeof SUGGEST_REASONS)[number]
 
+/** `turn` is the Host seq of the completed turn the candidate belongs to. */
 export type SuggestResponse =
-  | { suggestion: string | null; model: string; reason?: never }
-  | { suggestion: null; reason: SuggestReason; model?: never }
+  | { suggestion: string | null; model: string; turn?: number; reason?: never }
+  | { suggestion: null; reason: SuggestReason; model?: never; turn?: never }
+
+/** The latest completed turn of a Session, or null while busy, missing, or disabled. */
+export interface TurnResponse {
+  turn: number | null
+}
 
 export interface ModelsResponse {
   models: ModelEntry[]

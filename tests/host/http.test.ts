@@ -26,6 +26,7 @@ describe('Host HTTP boundary', () => {
     expect(await response.json()).toEqual({
       suggestion: '继续添加测试',
       model: 'fixture/test-model',
+      turn: 0,
     })
     expect(stream).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -45,7 +46,11 @@ describe('Host HTTP boundary', () => {
       }
       const response = await post({ sessionId: 'ready' })
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ suggestion: null, model: 'fixture/test-model' })
+      expect(await response.json()).toEqual({
+        suggestion: null,
+        model: 'fixture/test-model',
+        turn: 0,
+      })
       expect(fixture.ctx.logger?.debug).not.toHaveBeenCalled()
     },
   )
@@ -67,6 +72,7 @@ describe('Host HTTP boundary', () => {
     expect(await (await post({ sessionId: 'ready' })).json()).toEqual({
       suggestion: null,
       model: 'fixture/test-model',
+      turn: 0,
     })
     expect(stream).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -165,6 +171,29 @@ describe('Host HTTP boundary', () => {
         })
       ).status,
     ).toBe(403)
+  })
+
+  it('reports the latest completed turn without calling a model', async () => {
+    const stream = vi.spyOn(fixture.ctx.llm, 'stream')
+    fixture.sessions.set('running', sampleSession({ eventAt: () => ({ type: 'turn/start' }) }))
+    const turn = (body: unknown, init: RequestInit = {}) =>
+      fetch(`${origin}/prompt-suggestion/turn`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        ...init,
+      })
+    expect(await (await turn({ sessionId: 'ready' })).json()).toEqual({ turn: 0 })
+    expect(await (await turn({ sessionId: 'running' })).json()).toEqual({ turn: null })
+    expect(await (await turn({ sessionId: 'missing' })).json()).toEqual({ turn: null })
+    expect((await turn({})).status).toBe(400)
+    expect((await fetch(`${origin}/prompt-suggestion/turn`)).status).toBe(405)
+    expect(
+      (await turn({ sessionId: 'ready' }, { headers: { origin: 'https://example.invalid' } }))
+        .status,
+    ).toBe(403)
+    fixture.config.enabled = false
+    expect(await (await turn({ sessionId: 'ready' })).json()).toEqual({ turn: null })
+    expect(stream).not.toHaveBeenCalled()
   })
 
   it('propagates client disconnects to an in-flight completion', async () => {

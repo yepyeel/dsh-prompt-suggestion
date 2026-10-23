@@ -102,7 +102,7 @@ describe('completion lifecycle', () => {
         resolveSettings({}),
         new AbortController().signal,
       ),
-    ).toEqual({ suggestion: 'next step', model: 'fixture/test-model' })
+    ).toEqual({ suggestion: 'next step', model: 'fixture/test-model', turn: 0 })
   })
 
   it('does not invoke the provider for an already cancelled request', async () => {

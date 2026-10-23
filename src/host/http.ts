@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ModelsResponse, SuggestResponse } from '../shared/contracts'
-import { MODELS_ROUTE, ROUTE } from '../shared/defaults'
+import type { ModelsResponse, SuggestResponse, TurnResponse } from '../shared/contracts'
+import { MODELS_ROUTE, ROUTE, TURN_ROUTE } from '../shared/defaults'
 import { resolveSettings } from './config'
 import type { ConfigInput, HostContext } from './dsh'
 import { createModelCatalog } from './model-catalog'
@@ -8,7 +8,9 @@ import { createSuggestionService } from './suggestion-service'
 
 const BODY_LIMIT = 64 * 1024
 
-function sendJson(res: ServerResponse, status: number, body: SuggestResponse | ModelsResponse) {
+type ResponseBody = SuggestResponse | ModelsResponse | TurnResponse
+
+function sendJson(res: ServerResponse, status: number, body: ResponseBody) {
   if (res.destroyed || res.writableEnded) return
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -29,6 +31,25 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
+/** The non-empty `sessionId` of a JSON body, or null when the body is malformed. */
+async function readSessionId(req: IncomingMessage): Promise<string | null | undefined> {
+  let body: unknown
+  try {
+    body = await readJson(req)
+  } catch {
+    return undefined
+  }
+  if (
+    !body ||
+    typeof body !== 'object' ||
+    !('sessionId' in body) ||
+    typeof body.sessionId !== 'string' ||
+    !body.sessionId
+  )
+    return null
+  return body.sessionId
+}
+
 function isSameOrigin(req: IncomingMessage) {
   const origin = req.headers.origin
   if (!origin) return true
@@ -45,7 +66,7 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
   const guarded =
     (
       handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>,
-      fallback: SuggestResponse | ModelsResponse,
+      fallback: ResponseBody,
     ) =>
     (req: IncomingMessage, res: ServerResponse) => {
       void handler(req, res).catch(() => {
@@ -73,20 +94,12 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
               sendJson(res, 200, { suggestion: null, reason: 'disabled' })
               return
             }
-            let body: unknown
-            try {
-              body = await readJson(req)
-            } catch {
+            const sessionId = await readSessionId(req)
+            if (sessionId === undefined) {
               sendJson(res, 400, { suggestion: null, reason: 'bad-request' })
               return
             }
-            if (
-              !body ||
-              typeof body !== 'object' ||
-              !('sessionId' in body) ||
-              typeof body.sessionId !== 'string' ||
-              !body.sessionId
-            ) {
+            if (sessionId === null) {
               sendJson(res, 400, { suggestion: null, reason: 'missing-session' })
               return
             }
@@ -97,7 +110,7 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
             res.on('close', onClose)
             try {
               const result = await suggestions.suggest(
-                body.sessionId,
+                sessionId,
                 resolveSettings(config),
                 controller.signal,
               )
@@ -114,6 +127,34 @@ export function registerRoutes(ctx: HostContext, config: ConfigInput) {
         ),
       }),
     'prompt-suggestion route',
+  )
+
+  ctx.effect(
+    () =>
+      ctx.webServer.register({
+        kind: 'exact',
+        path: TURN_ROUTE,
+        handler: guarded(
+          async (req, res) => {
+            if (req.method !== 'POST') {
+              sendJson(res, 405, { turn: null })
+              return
+            }
+            if (!isSameOrigin(req)) {
+              sendJson(res, 403, { turn: null })
+              return
+            }
+            const sessionId = await readSessionId(req)
+            if (!sessionId) {
+              sendJson(res, 400, { turn: null })
+              return
+            }
+            sendJson(res, 200, { turn: suggestions.turn(sessionId, resolveSettings(config)) })
+          },
+          { turn: null },
+        ),
+      }),
+    'prompt-suggestion turn route',
   )
 
   ctx.effect(

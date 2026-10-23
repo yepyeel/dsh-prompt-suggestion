@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PredictionController } from '../../src/client/ghost/controller'
+import { PredictionCache } from '../../src/client/ghost/prediction-cache'
 import type { SuggestResponse } from '../../src/shared/contracts'
 
 function deferred<T>() {
@@ -110,17 +111,15 @@ describe('prediction lifecycle', () => {
     expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: '继续测试' })
   })
 
-  it('drops an old session response even when the transport ignores abort', async () => {
+  it('never shows an old session response in the new session', async () => {
     const pending = deferred<SuggestResponse>()
     suggest.mockReturnValue(pending.promise)
     update(true)
     update(false)
     await vi.advanceTimersByTimeAsync(250)
-    const signal = suggest.mock.calls[0][1]
     update(false, 'two')
-    pending.resolve({ suggestion: 'stale', model: 'fixture/test' })
+    pending.resolve({ suggestion: 'stale', model: 'fixture/test', turn: 3 })
     await vi.advanceTimersByTimeAsync(0)
-    expect(signal.aborted).toBe(true)
     expect(controller.getSnapshot()).toEqual({ kind: 'idle' })
   })
 
@@ -163,7 +162,8 @@ describe('prediction lifecycle', () => {
       }
       pending.resolve({ suggestion: 'stale', model: 'fixture/test' })
       await vi.advanceTimersByTimeAsync(2_000)
-      expect(signal.aborted).toBe(true)
+      // A session switch detaches the model call so it can finish into the cache.
+      expect(signal.aborted).toBe(change !== 'session-switch')
       expect(controller.getSnapshot().kind).not.toBe('shown')
       expect(suggest).toHaveBeenCalledTimes(1)
       update(true)
@@ -290,5 +290,182 @@ describe('prediction lifecycle', () => {
     await vi.advanceTimersByTimeAsync(2_000)
     expect(suggest).toHaveBeenCalledTimes(1)
     expect(controller.getSnapshot().kind).toBe('idle')
+  })
+})
+
+describe('prediction cache across session switches', () => {
+  let cache: PredictionCache
+  let turns: Map<string, number | null>
+  let suggest: ReturnType<
+    typeof vi.fn<(id: string, signal: AbortSignal) => Promise<SuggestResponse>>
+  >
+  let checkTurn: ReturnType<
+    typeof vi.fn<(id: string, signal: AbortSignal) => Promise<number | null>>
+  >
+  let controller: PredictionController
+  const update = (sessionId: string, running = false, blank = true, enabled = true) =>
+    controller.update({ sessionId, running, blank, enabled, automatic: true })
+  const finishTurn = async (sessionId: string) => {
+    update(sessionId, true)
+    update(sessionId)
+    await vi.advanceTimersByTimeAsync(250)
+  }
+  beforeEach(() => {
+    vi.useFakeTimers()
+    cache = new PredictionCache()
+    turns = new Map([
+      ['one', 5],
+      ['two', 9],
+    ])
+    suggest = vi.fn(async (id: string) => ({
+      suggestion: `next for ${id}`,
+      model: 'fixture/test',
+      turn: turns.get(id) ?? 0,
+    }))
+    checkTurn = vi.fn(async (id: string) => turns.get(id) ?? null)
+    controller = new PredictionController(suggest, { cache, checkTurn })
+  })
+  afterEach(() => {
+    controller.dispose()
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('restores a shown prediction after switching away and back on the same turn', async () => {
+    update('one')
+    await finishTurn('one')
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next for one' })
+    update('two')
+    expect(controller.getSnapshot()).toEqual({ kind: 'idle' })
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(checkTurn).toHaveBeenCalledWith('one', expect.any(AbortSignal))
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next for one' })
+    expect(suggest).toHaveBeenCalledTimes(1)
+    const insert = vi.fn(() => true)
+    expect(controller.accept(insert)).toBe(true)
+    expect(insert).toHaveBeenCalledWith('next for one')
+  })
+
+  it('drops the cached prediction when the session advanced in the background', async () => {
+    update('one')
+    await finishTurn('one')
+    update('two')
+    turns.set('one', 8)
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'idle' })
+    expect(cache.get('one')).toBeUndefined()
+  })
+
+  it.each(['running', 'draft'] as const)(
+    'does not restore into a session that is %s',
+    async (condition) => {
+      update('one')
+      await finishTurn('one')
+      update('two')
+      update('one', condition === 'running', condition !== 'draft')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(checkTurn).not.toHaveBeenCalled()
+      expect(controller.getSnapshot().kind).not.toBe('shown')
+      expect(cache.get('one')).toBeUndefined()
+    },
+  )
+
+  it('does not cache consumed predictions', async () => {
+    update('one')
+    await finishTurn('one')
+    controller.dismiss()
+    update('two')
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(checkTurn).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().kind).toBe('idle')
+  })
+
+  it('lets an in-flight request finish into the cache after a switch', async () => {
+    const pending = deferred<SuggestResponse>()
+    suggest.mockReturnValueOnce(pending.promise)
+    update('one')
+    await finishTurn('one')
+    expect(controller.getSnapshot().kind).toBe('requesting')
+    const signal = suggest.mock.calls[0][1]
+    update('two')
+    expect(signal.aborted).toBe(false)
+    pending.resolve({ suggestion: 'late for one', model: 'fixture/test', turn: 5 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'idle' })
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'late for one' })
+  })
+
+  it('shows a detached result once it lands if the user already switched back', async () => {
+    const pending = deferred<SuggestResponse>()
+    suggest.mockReturnValueOnce(pending.promise)
+    update('one')
+    await finishTurn('one')
+    update('two')
+    update('one')
+    pending.resolve({ suggestion: 'late for one', model: 'fixture/test', turn: 5 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'late for one' })
+  })
+
+  it('ignores a turn check that resolves after the user started typing', async () => {
+    const check = deferred<number | null>()
+    update('one')
+    await finishTurn('one')
+    update('two')
+    checkTurn.mockReturnValueOnce(check.promise)
+    update('one')
+    update('one', false, false)
+    check.resolve(5)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot().kind).toBe('dismissed')
+    expect(cache.get('one')).toBeUndefined()
+  })
+
+  it('clears the cache and aborts detached work when disabled', async () => {
+    const pending = deferred<SuggestResponse>()
+    update('one')
+    await finishTurn('one')
+    suggest.mockReturnValueOnce(pending.promise)
+    update('two')
+    await finishTurn('two')
+    const signal = suggest.mock.calls[1][1]
+    update('three')
+    expect(cache.size).toBe(1)
+    update('three', false, true, false)
+    expect(cache.size).toBe(0)
+    expect(signal.aborted).toBe(true)
+    pending.resolve({ suggestion: 'late', model: 'fixture/test', turn: 9 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cache.size).toBe(0)
+  })
+
+  it('stashes on disposal so a remounted composer restores the prediction', async () => {
+    update('one')
+    await finishTurn('one')
+    controller.dispose()
+    controller = new PredictionController(suggest, { cache, checkTurn })
+    update('one')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.getSnapshot()).toEqual({ kind: 'shown', text: 'next for one' })
+  })
+
+  it('does not cache candidates without a Host turn and evicts the oldest session', async () => {
+    suggest.mockResolvedValueOnce({ suggestion: 'legacy', model: 'fixture/test' })
+    update('one')
+    await finishTurn('one')
+    update('two')
+    expect(cache.get('one')).toBeUndefined()
+    const small = new PredictionCache(2)
+    small.set('a', { text: 'a', turn: 1 })
+    small.set('b', { text: 'b', turn: 1 })
+    small.set('a', { text: 'a2', turn: 2 })
+    small.set('c', { text: 'c', turn: 1 })
+    expect(small.get('b')).toBeUndefined()
+    expect(small.get('a')).toEqual({ text: 'a2', turn: 2 })
   })
 })

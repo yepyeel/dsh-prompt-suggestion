@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type { GhostProps, SettingsForm } from '../dsh/contracts'
 import { GHOST_CSS } from '../styles/ghost'
+import type { PredictionCache } from './prediction-cache'
 import type { SessionPredictionControls } from './session-controls'
 import { useComposer } from './use-composer'
 import type { PredictionOptions } from './use-prediction'
@@ -10,8 +11,13 @@ import { usePrediction } from './use-prediction'
 export function ConfiguredPromptGhost({
   form,
   controls,
+  cache,
   ...props
-}: GhostProps & { form: SettingsForm; controls: SessionPredictionControls }) {
+}: GhostProps & {
+  form: SettingsForm
+  controls: SessionPredictionControls
+  cache?: PredictionCache
+}) {
   const snapshot = useSyncExternalStore(
     (listener) => form.subscribe(listener),
     () => form.getSnapshot(),
@@ -20,7 +26,15 @@ export function ConfiguredPromptGhost({
   const automatic = useSyncExternalStore(controls.subscribe, () =>
     controls.getAutomatic(props.sessionId),
   )
-  return <PromptGhost {...props} enabled={enabled} automatic={automatic} controls={controls} />
+  return (
+    <PromptGhost
+      {...props}
+      enabled={enabled}
+      automatic={automatic}
+      controls={controls}
+      cache={cache}
+    />
+  )
 }
 
 export function PromptGhost(props: GhostProps & PredictionOptions) {
@@ -32,8 +46,8 @@ export function PromptGhost(props: GhostProps & PredictionOptions) {
       return props.inputActions.insertText(text, span)
     })
   }, [controller, props.inputActions])
-  const shown = state.kind === 'shown'
-  const box = useComposer(root, shown, props.sessionId, controller, accept)
+  const text = state.kind === 'shown' ? state.text : undefined
+  const box = useComposer(root, text, props.sessionId, controller, accept)
   return (
     <div ref={root} className="dsh-ps-root">
       <style>{GHOST_CSS}</style>

@@ -5,10 +5,23 @@ import type {
   SuggestResponse,
 } from '../shared/contracts'
 import { SUGGEST_REASONS } from '../shared/contracts'
-import { CLIENT_REQUEST_TIMEOUT_MS, MODELS_ROUTE, ROUTE } from '../shared/defaults'
+import { CLIENT_REQUEST_TIMEOUT_MS, MODELS_ROUTE, ROUTE, TURN_ROUTE } from '../shared/defaults'
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
+}
+
+function turnOf(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+function sessionBody(sessionId: string): RequestInit {
+  const body: SuggestRequest = { sessionId }
+  return {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }
 }
 
 async function request(path: string, options: RequestInit, signal?: AbortSignal): Promise<unknown> {
@@ -33,18 +46,14 @@ async function request(path: string, options: RequestInit, signal?: AbortSignal)
 
 export const api = {
   async suggest(sessionId: string, signal: AbortSignal): Promise<SuggestResponse> {
-    const body: SuggestRequest = { sessionId }
-    const data = await request(
-      ROUTE,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      signal,
-    )
+    const data = await request(ROUTE, sessionBody(sessionId), signal)
     if (record(data) && (data.suggestion === null || typeof data.suggestion === 'string')) {
-      if (typeof data.model === 'string') return { suggestion: data.suggestion, model: data.model }
+      if (typeof data.model === 'string') {
+        const turn = turnOf(data.turn)
+        return turn === undefined
+          ? { suggestion: data.suggestion, model: data.model }
+          : { suggestion: data.suggestion, model: data.model, turn }
+      }
       if (
         data.suggestion === null &&
         (SUGGEST_REASONS as readonly unknown[]).includes(data.reason)
@@ -53,6 +62,13 @@ export const api = {
       }
     }
     throw new Error('Invalid suggestion response')
+  },
+  /** The Session's latest completed turn, used to revalidate a cached candidate. */
+  async turn(sessionId: string, signal: AbortSignal): Promise<number | null> {
+    const data = await request(TURN_ROUTE, sessionBody(sessionId), signal)
+    if (!record(data) || (data.turn !== null && turnOf(data.turn) === undefined))
+      throw new Error('Invalid turn response')
+    return data.turn === null ? null : (turnOf(data.turn) ?? null)
   },
   async models(signal: AbortSignal): Promise<ModelEntry[]> {
     const data = await request(MODELS_ROUTE, {}, signal)

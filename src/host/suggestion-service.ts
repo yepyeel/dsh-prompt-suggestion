@@ -7,6 +7,12 @@ export function createSuggestionService(
   ctx: Pick<HostContext, 'sessions' | 'llm' | 'get' | 'logger'>,
 ) {
   return {
+    /** Cheap freshness check for a client-cached candidate; never calls a model. */
+    turn(sessionId: string, settings: Settings): number | null {
+      if (!settings.enabled) return null
+      const session = ctx.sessions.get(sessionId)
+      return session ? completedTurnSeq(session) : null
+    },
     async suggest(
       sessionId: string,
       settings: Settings,
@@ -53,6 +59,7 @@ export function createSuggestionService(
         return {
           suggestion: parseSuggestion(raw, messages),
           model: `${model.provider}/${model.model}`,
+          turn: turnSeq,
         }
       } catch {
         const reason = timedOut ? 'timeout' : signal.aborted ? 'cancelled' : 'upstream-error'

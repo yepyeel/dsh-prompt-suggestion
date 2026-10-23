@@ -1,5 +1,6 @@
 export const DEFAULT_PROMPT = `你是一个输入预测器。下面是用户与编码 Agent 的对话记录。
 只在对话提供足够依据时，预测用户接下来最可能输入的一条具体、有价值的消息。
+记录中的「工具」条目是助手执行过的操作摘要（调用了什么、改了哪个文件、命令是否失败），可作为判断下一步的线索。
 
 规则：
 - 如果上下文不足、无法确定具体的下一步，或任务已结束且没有明确后续，只输出 NO_SUGGESTION。这是正常结果，不必强行给出建议。
@@ -15,6 +16,9 @@ export const SETTINGS_NS = 'prompt-suggestion'
 export const LOCALE_NS = 'settings.promptSuggestion'
 export const ROUTE = '/prompt-suggestion/suggest'
 export const MODELS_ROUTE = '/prompt-suggestion/models'
+export const TURN_ROUTE = '/prompt-suggestion/turn'
+/** Sessions whose last shown prediction is kept for a later switch back. */
+export const PREDICTION_CACHE_SIZE = 32
 export const DEFAULT_CONTEXT_MESSAGES = 16
 export const MIN_CONTEXT_MESSAGES = 2
 export const MAX_CONTEXT_MESSAGES = 64

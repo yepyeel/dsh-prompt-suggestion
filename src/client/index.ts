@@ -3,6 +3,7 @@ import { LOCALE_NS, SETTINGS_NS } from '../shared/defaults'
 import type { ClientContext, CommandUi, GhostProps } from './dsh/contracts'
 import { installSettingsNavIcon } from './dsh/nav-icon'
 import { predictionCommands } from './ghost/commands'
+import { PredictionCache } from './ghost/prediction-cache'
 import { ConfiguredPromptGhost } from './ghost/prompt-ghost'
 import { createSessionControls } from './ghost/session-controls'
 import { en, zh } from './locales'
@@ -20,8 +21,11 @@ export function apply(ctx: ClientContext) {
   const form = ctx.configForms.get(SETTINGS_NS)
   const controls = createSessionControls()
   ctx.effect(() => () => controls.dispose(), 'prompt-suggestion: session controls')
+  const cache = new PredictionCache()
+  ctx.effect(() => () => cache.clear(), 'prompt-suggestion: prediction cache')
   const SettingsEntry = () => h(SettingsPage, { form, t })
-  const GhostEntry = (props: GhostProps) => h(ConfiguredPromptGhost, { ...props, form, controls })
+  const GhostEntry = (props: GhostProps) =>
+    h(ConfiguredPromptGhost, { ...props, form, controls, cache })
   ctx.slots.inject('conversation.input.overlay', () =>
     ctx.slots.register(
       { name: 'conversation.input.overlay', id: 'prompt-ghost', order: 4 },
