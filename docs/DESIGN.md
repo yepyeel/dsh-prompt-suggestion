@@ -15,7 +15,8 @@ Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` �
 | `src/shared/` | 设置与 HTTP 契约、默认值、端点、超时预算 |
 | `src/host/index.ts` | DSH 注入、设置自动表单开关、注册入口 |
 | `src/host/config.ts` | volatile schema 和每次请求的设置读取 |
-| `src/host/domain.ts` | 上下文裁剪、预测解析、回合判断、模型优先级、流聚合 |
+| `src/host/domain.ts` | 上下文裁剪、预测解析、模型优先级、流聚合 |
+| `src/host/turn.ts` | 已完成回合的投影折叠；不再直接读取会话日志 |
 | `src/host/suggestion-service.ts` | 预测流程、取消、请求期限与诊断 |
 | `src/host/model-catalog.ts` | 每个插件实例独立的模型目录、缓存与并发合并 |
 | `src/host/http.ts` | 方法、Origin、JSON/body 限制、响应与异常出口 |
@@ -34,7 +35,7 @@ Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` �
 `POST /prompt-suggestion/suggest` 接收 `{ sessionId }`，返回 `{ suggestion, model, turn }` 或 `{ suggestion: null, reason }`，`turn` 是候选所属的已完成 `turn/end` 事件序号。`POST /prompt-suggestion/turn` 接收 `{ sessionId }`，返回 `{ turn }`；会话进行中、不存在或功能关闭时为 `null`，不调用模型。`GET /prompt-suggestion/models` 返回 `{ models: [{ provider, id, name }] }`。
 
 1. HTTP 层验证方法、Origin、启用状态及参数，JSON body 上限 64 KiB。
-2. 读取 Session，确认最近回合以 `turn/end(completed)` 结束。error、aborted、新用户消息、进行中的回合均跳过。
+2. 读取 `sessionProjections` 上的 `prompt-suggestion.turn`。只有最近的 `turn/end` 原因是 `completed` 时才继续；`error`、`aborted`、`blocked`、新用户消息和进行中的回合都是空闲之外的状态。投影由宿主在事件提交时增量折叠，插件不调用已废弃的 `session.eventAt()`。DSH 0.2.1 的 base profile 挂载了这个注册表，插件把它列为启动依赖。
 3. 过滤 system/developer 消息。助手的 `tool-call` 块按 `toolCallId` 与对应 `tool` 消息配对，渲染为 `[调用 工具名] 关键参数 → 结果`：参数只取 command / file_path / path / pattern / query / url / description 中第一个存在的字段（缺失时取第一个字符串值），最多 120 字符，不输出文件正文；`isError` 或非零 `exit code` 视为失败，保留输出结尾 160 字符，成功只保留开头 80 字符。连续的操作合并为一条「工具」条目，最多保留最近 6 项、1,200 字符，并注明省略数量；没有对应调用的工具结果仍显示为 `[工具结果]`，合并空白并缩写到 160 字符。长正文保留开头和结尾，中间插入省略标记，每条正文含标记最多 700 字符。先为最近一条用户需求和助手回复保留位置，再按新到旧补齐其他消息，输出恢复时间顺序；消息条数不超过配置值，总预算含角色标签、分隔符最多 7,000 字符。
 4. 模型优先级为完整设置覆盖、会话模型、进程默认模型。
 5. 聚合 `llm.stream()` 的 text-delta，忽略 reasoning 等事件；错误或中止结束视为失败。
@@ -44,7 +45,7 @@ Host 运行时依赖仍只有 `@deepseek-ai/schemastery`。Client 将 `react` �
 
 空候选继续返回 `{ suggestion: null, model }`，不算模型错误、不记录失败日志，Client 保持 idle 且不自动重试；预测不写入 Session。
 
-请求前记录 Session 实例和最新已完成 `turn/end` 的事件序号；模型返回后再次核对两者。Session 被移除或替换、出现新用户消息或新回合时返回 `stale-turn`，客户端不重试；同一回合后的 usage 等记账事件不会作废结果。HTTP 层在开始调用和回包前重新读取 volatile 启用状态，关闭后返回 `disabled`。
+请求前记录 Session 实例和投影里的已完成回合序号；模型返回后再读一次投影。Session 被移除或替换、出现新用户消息、新回合，或以非 `completed` 结束时返回 `stale-turn`，客户端不重试。同一回合之后的 usage 等记账事件不改变投影，因此不会作废结果，也不再受以前 24 条回溯窗口的限制。HTTP 层在开始调用和回包前重新读取 volatile 启用状态，关闭后返回 `disabled`。
 
 模型调用期限为 8 秒。客户端断开会取消调用；服务同时监听取消并结束等待，即使 provider 未响应 AbortSignal 也不会让 HTTP 一直挂起。正常失败继续返回空候选。调试日志只记录 timeout / cancelled / upstream-error 与耗时，不记录上下文、预测文本或凭据。模型调用之外的 SDK 异常由 HTTP 入口捕获并返回 500，避免悬空 rejection。
 

@@ -296,20 +296,3 @@ export async function complete(
   }
   return text
 }
-
-/** Durable identity of the latest completed turn, ignoring trailing bookkeeping. */
-export function completedTurnSeq(session: Pick<Session, 'seq' | 'eventAt'>): number | null {
-  const end = session.seq
-  const floor = Math.max(0, end - 24)
-  for (let seq = end - 1; seq >= floor; seq -= 1) {
-    const event = session.eventAt(seq)
-    if (!event) break
-    if (event.type === 'turn/start' || event.type === 'user/message') return null
-    if (event.type === 'turn/end') return event.data?.reason?.kind === 'completed' ? seq : null
-  }
-  return null
-}
-
-export function isAtRest(session: Pick<Session, 'seq' | 'eventAt'>) {
-  return completedTurnSeq(session) !== null
-}

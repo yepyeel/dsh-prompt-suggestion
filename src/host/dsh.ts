@@ -22,14 +22,32 @@ export interface Message {
 
 export interface SessionEvent {
   type: string
+  /** Log position. Present on committed events; absent means the event cannot identify a turn. */
+  seq?: number
   data?: { reason?: { kind: string } }
 }
 
 export interface Session {
-  seq: number
-  eventAt(seq: number): SessionEvent | undefined
   deriveMessages(): readonly Message[]
   requestHeader?(): { config?: Partial<ModelSelection> } | null
+}
+
+/** Latest completed `turn/end` sequence, or null while the session is not at rest. */
+export interface TurnState {
+  seq: number | null
+}
+
+export interface TurnProjection {
+  key: string
+  stateVersion: number
+  stateSchema: { parse(value: unknown): TurnState }
+  init(): TurnState
+  apply(state: TurnState, event: SessionEvent): TurnState
+}
+
+export interface SessionProjections {
+  register(definition: TurnProjection): () => void
+  stateOf(session: Session, key: string): TurnState | undefined
 }
 
 export interface CompletionRequest extends ModelSelection {
@@ -54,6 +72,7 @@ export interface LLM {
 
 export interface HostContext {
   sessions: { get(id: string): Session | undefined }
+  sessionProjections: SessionProjections
   llm: LLM
   get(name: 'agentDefaultModel'): { currentSelection?(): ModelSelection | null } | undefined
   logger?: { debug(message: string, ...values: unknown[]): void }

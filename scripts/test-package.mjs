@@ -59,7 +59,7 @@ try {
       `
     import assert from 'node:assert/strict'
     import * as plugin from '@local/dsh-prompt-suggestion'
-    assert.deepEqual(plugin.inject, ['webServer', 'sessions', 'llm'])
+    assert.deepEqual(plugin.inject, ['webServer', 'sessions', 'llm', 'sessionProjections'])
     assert.equal(typeof plugin.apply, 'function')
     assert(plugin.Config)
     assert.equal(plugin.resolveSettings({}).maxContextMessages, 16)

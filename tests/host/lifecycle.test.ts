@@ -53,8 +53,10 @@ describe('completion lifecycle', () => {
   ])('discards model output after %s while the provider is pending', async (change) => {
     vi.useFakeTimers()
     const { ctx, sessions } = hostFixture()
-    const events: SessionEvent[] = [{ type: 'turn/end', data: { reason: { kind: 'completed' } } }]
-    const session = sampleSession({ eventAt: (seq) => events[seq] })
+    const events: SessionEvent[] = [
+      { type: 'turn/end', seq: 0, data: { reason: { kind: 'completed' } } },
+    ]
+    const session = sampleSession({ events })
     sessions.set('ready', session)
     let finish!: () => void
     const pending = new Promise<void>((resolve) => {
@@ -72,14 +74,17 @@ describe('completion lifecycle', () => {
     if (change === 'session-replaced') sessions.set('ready', sampleSession())
     else if (change === 'session-removed') sessions.delete('ready')
     else {
-      events.push({ type: change === 'new-message' ? 'user/message' : 'turn/start' })
+      events.push({
+        type: change === 'new-message' ? 'user/message' : 'turn/start',
+        seq: events.length,
+      })
       if (change === 'next-completed-turn' || change === 'next-aborted-turn') {
         events.push({
           type: 'turn/end',
+          seq: events.length,
           data: { reason: { kind: change === 'next-completed-turn' ? 'completed' : 'aborted' } },
         })
       }
-      session.seq = events.length
     }
     finish()
     expect(await result).toEqual({ suggestion: null, reason: 'stale-turn' })
@@ -88,12 +93,13 @@ describe('completion lifecycle', () => {
 
   it('allows bookkeeping appended after the same completed turn', async () => {
     const { ctx, sessions } = hostFixture()
-    const events: SessionEvent[] = [{ type: 'turn/end', data: { reason: { kind: 'completed' } } }]
-    const session = sampleSession({ eventAt: (seq) => events[seq] })
+    const events: SessionEvent[] = [
+      { type: 'turn/end', seq: 0, data: { reason: { kind: 'completed' } } },
+    ]
+    const session = sampleSession({ events })
     sessions.set('ready', session)
     ctx.llm.stream = async function* () {
-      events.push({ type: 'usage' })
-      session.seq = events.length
+      events.push({ type: 'usage', seq: events.length })
       yield { type: 'text-delta', text: 'next step' }
     }
     expect(
