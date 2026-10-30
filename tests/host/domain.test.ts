@@ -10,10 +10,8 @@ import {
 } from '../../src/host/index'
 
 const message = (role: string, text: string) => ({ role, content: [{ type: 'text', text }] })
-const session = (events: { type: string; data?: { reason: { kind: string } } }[]) => ({
-  seq: events.length,
-  eventAt: (seq: number) => events[seq],
-})
+const session = (events: { type: string; seq?: number; data?: { reason: { kind: string } } }[]) =>
+  events.map((event, seq) => ({ seq, ...event }))
 
 describe('transcript budget', () => {
   it('excludes instruction messages and preserves user/assistant order', () => {
@@ -235,7 +233,7 @@ describe('suggestion parsing', () => {
 })
 
 describe('completed turn detection', () => {
-  it.each(['completed', 'error', 'aborted'])('handles turn end reason %s', (kind) => {
+  it.each(['completed', 'error', 'aborted', 'blocked'])('handles turn end reason %s', (kind) => {
     const value = session([{ type: 'turn/end', data: { reason: { kind } } }])
     expect(isAtRest(value)).toBe(kind === 'completed')
   })
@@ -243,9 +241,13 @@ describe('completed turn detection', () => {
   it('ignores trailing bookkeeping but rejects a newer turn or user message', () => {
     const completed = { type: 'turn/end', data: { reason: { kind: 'completed' } } }
     expect(isAtRest(session([completed, { type: 'usage' }]))).toBe(true)
+    expect(
+      isAtRest(session([completed, ...Array.from({ length: 40 }, () => ({ type: 'usage' }))])),
+    ).toBe(true)
     expect(isAtRest(session([completed, { type: 'turn/start' }]))).toBe(false)
     expect(isAtRest(session([completed, { type: 'user/message' }]))).toBe(false)
     expect(isAtRest(session([]))).toBe(false)
+    expect(isAtRest([{ type: 'turn/end', data: { reason: { kind: 'completed' } } }])).toBe(false)
   })
 })
 

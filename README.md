@@ -15,7 +15,7 @@
 
 ## 环境要求
 
-- DSH Desktop，或 `dsh web`（旧版本写作 `dsh --profile web`）
+- DSH Desktop 0.2.1 或更新版本，或同版本的 `dsh web`（旧版本写作 `dsh --profile web`）。回合判断依赖 base profile 里的 `sessionProjections`，不再读取已废弃的会话日志接口。
 - 从 GitHub 安装时，Host 所在机器需要能访问 GitHub
 - 一个可用的模型 provider（默认跟随当前会话）
 
@@ -133,9 +133,9 @@ pnpm build
 
 ## 实现概览
 
-- **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`，结果附带所属回合 `turn`；`POST /prompt-suggestion/turn` 只返回最新已完成回合，用于校验缓存，不调用模型；`GET /prompt-suggestion/models` 汇总可用模型。
+- **Host**：`POST /prompt-suggestion/suggest` 读取 Session、裁剪上下文、调用 `ctx.llm.stream()`，结果附带所属回合 `turn`；回合序号来自 `sessionProjections` 的 `prompt-suggestion.turn`，不扫描会话日志。`POST /prompt-suggestion/turn` 只返回最新已完成回合，用于校验缓存，不调用模型；`GET /prompt-suggestion/models` 汇总可用模型。
 - **Client**：源码按职责拆在 `src/client/`（`ghost/`、`settings/`、`dsh/` 等），由 esbuild 打成 DSH 加载的 classic bundle `build/client.js`；在 `conversation.input.overlay` 中渲染 ghost，按输入框原生 placeholder 的矩形与字体对齐；采纳走 `inputActions.captureInsertion()` + `insertText()`。
-- **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` 不预测。
+- **回合边界**：只接受以 `turn/end(completed)` 收尾的会话；`error` / `aborted` / `blocked` 不预测。
 - **过期结果保护**：请求和回包都核对会话与回合；开始输入、中文输入法组合、切换会话或关闭功能时立即作废旧预测。
 - **失败降级**：超时、限流、解析失败一律静默返回空，不影响正常输入。
 

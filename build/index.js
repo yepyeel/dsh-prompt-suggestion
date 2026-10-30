@@ -341,19 +341,49 @@ ${TRANSCRIPT_TRAILER}` }
   }
   return text;
 }
-function completedTurnSeq(session) {
-  const end = session.seq;
-  const floor = Math.max(0, end - 24);
-  for (let seq = end - 1; seq >= floor; seq -= 1) {
-    const event = session.eventAt(seq);
-    if (!event) break;
-    if (event.type === "turn/start" || event.type === "user/message") return null;
-    if (event.type === "turn/end") return event.data?.reason?.kind === "completed" ? seq : null;
+
+// src/host/turn.ts
+var TURN_KEY = "prompt-suggestion.turn";
+var IDLE = { seq: null };
+function applyTurn(state, event) {
+  if (event.type === "turn/start" || event.type === "user/message") {
+    return state.seq === null ? state : IDLE;
   }
-  return null;
+  if (event.type !== "turn/end") return state;
+  const seq = event.data?.reason?.kind === "completed" ? event.seq : void 0;
+  if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) {
+    return state.seq === null ? state : IDLE;
+  }
+  return state.seq === seq ? state : { seq };
 }
-function isAtRest(session) {
-  return completedTurnSeq(session) !== null;
+function completedTurnSeq(events) {
+  let state = IDLE;
+  for (const event of events) state = applyTurn(state, event);
+  return state.seq;
+}
+function isAtRest(events) {
+  return completedTurnSeq(events) !== null;
+}
+var turnStateSchema = {
+  parse(value) {
+    if (!value || typeof value !== "object" || !("seq" in value)) {
+      throw new Error("invalid prompt-suggestion turn state");
+    }
+    const seq = value.seq;
+    if (seq === null) return IDLE;
+    if (typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0) return { seq };
+    throw new Error("invalid prompt-suggestion turn state");
+  }
+};
+var turnProjection = {
+  key: TURN_KEY,
+  stateVersion: 1,
+  stateSchema: turnStateSchema,
+  init: () => IDLE,
+  apply: applyTurn
+};
+function completedTurn(projections, session) {
+  return projections.stateOf(session, TURN_KEY)?.seq ?? null;
 }
 
 // src/host/suggestion-service.ts
@@ -363,13 +393,13 @@ function createSuggestionService(ctx) {
     turn(sessionId, settings) {
       if (!settings.enabled) return null;
       const session = ctx.sessions.get(sessionId);
-      return session ? completedTurnSeq(session) : null;
+      return session ? completedTurn(ctx.sessionProjections, session) : null;
     },
     async suggest(sessionId, settings, signal) {
       if (!settings.enabled) return { suggestion: null, reason: "disabled" };
       const session = ctx.sessions.get(sessionId);
       if (!session) return { suggestion: null, reason: "no-session" };
-      const turnSeq = completedTurnSeq(session);
+      const turnSeq = completedTurn(ctx.sessionProjections, session);
       if (turnSeq === null) return { suggestion: null, reason: "not-idle" };
       const messages = session.deriveMessages();
       if (!messages.some((message) => message.role === "user"))
@@ -402,7 +432,7 @@ function createSuggestionService(ctx) {
           cancelled
         ]);
         if (controller.signal.aborted) return { suggestion: null, reason: "model-error" };
-        if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
+        if (ctx.sessions.get(sessionId) !== session || completedTurn(ctx.sessionProjections, session) !== turnSeq)
           return { suggestion: null, reason: "stale-turn" };
         return {
           suggestion: parseSuggestion(raw, messages),
@@ -574,11 +604,15 @@ function registerRoutes(ctx, config) {
 }
 
 // src/host/index.ts
-var inject = ["webServer", "sessions", "llm"];
+var inject = ["webServer", "sessions", "llm", "sessionProjections"];
 function apply(ctx, config) {
   ctx.inject(["settings"], (child) => {
     child.effect(() => child.settings.configure({ auto: false }, ctx.fiber));
   });
+  ctx.effect(
+    () => ctx.sessionProjections.register(turnProjection),
+    "prompt-suggestion: turn projection"
+  );
   registerRoutes(ctx, config);
 }
 export {

@@ -1,17 +1,18 @@
 import type { Settings, SuggestResponse } from '../shared/contracts'
 import { HOST_REQUEST_TIMEOUT_MS } from '../shared/defaults'
-import { buildTranscript, complete, completedTurnSeq, parseSuggestion, pickModel } from './domain'
+import { buildTranscript, complete, parseSuggestion, pickModel } from './domain'
 import type { HostContext } from './dsh'
+import { completedTurn } from './turn'
 
 export function createSuggestionService(
-  ctx: Pick<HostContext, 'sessions' | 'llm' | 'get' | 'logger'>,
+  ctx: Pick<HostContext, 'sessions' | 'sessionProjections' | 'llm' | 'get' | 'logger'>,
 ) {
   return {
     /** Cheap freshness check for a client-cached candidate; never calls a model. */
     turn(sessionId: string, settings: Settings): number | null {
       if (!settings.enabled) return null
       const session = ctx.sessions.get(sessionId)
-      return session ? completedTurnSeq(session) : null
+      return session ? completedTurn(ctx.sessionProjections, session) : null
     },
     async suggest(
       sessionId: string,
@@ -21,7 +22,7 @@ export function createSuggestionService(
       if (!settings.enabled) return { suggestion: null, reason: 'disabled' }
       const session = ctx.sessions.get(sessionId)
       if (!session) return { suggestion: null, reason: 'no-session' }
-      const turnSeq = completedTurnSeq(session)
+      const turnSeq = completedTurn(ctx.sessionProjections, session)
       if (turnSeq === null) return { suggestion: null, reason: 'not-idle' }
       const messages = session.deriveMessages()
       if (!messages.some((message) => message.role === 'user'))
@@ -54,7 +55,10 @@ export function createSuggestionService(
           cancelled,
         ])
         if (controller.signal.aborted) return { suggestion: null, reason: 'model-error' }
-        if (ctx.sessions.get(sessionId) !== session || completedTurnSeq(session) !== turnSeq)
+        if (
+          ctx.sessions.get(sessionId) !== session ||
+          completedTurn(ctx.sessionProjections, session) !== turnSeq
+        )
           return { suggestion: null, reason: 'stale-turn' }
         return {
           suggestion: parseSuggestion(raw, messages),

@@ -130,7 +130,7 @@ describe('Host HTTP boundary', () => {
   })
 
   it('skips missing, running, empty, and model-less sessions', async () => {
-    fixture.sessions.set('running', sampleSession({ eventAt: () => ({ type: 'turn/start' }) }))
+    fixture.sessions.set('running', sampleSession({ events: [{ type: 'turn/start', seq: 0 }] }))
     fixture.sessions.set('empty', sampleSession({ deriveMessages: () => [] }))
     fixture.sessions.set('no-model', sampleSession({ requestHeader: () => ({}) }))
     for (const [id, reason] of [
@@ -175,7 +175,7 @@ describe('Host HTTP boundary', () => {
 
   it('reports the latest completed turn without calling a model', async () => {
     const stream = vi.spyOn(fixture.ctx.llm, 'stream')
-    fixture.sessions.set('running', sampleSession({ eventAt: () => ({ type: 'turn/start' }) }))
+    fixture.sessions.set('running', sampleSession({ events: [{ type: 'turn/start', seq: 0 }] }))
     const turn = (body: unknown, init: RequestInit = {}) =>
       fetch(`${origin}/prompt-suggestion/turn`, {
         method: 'POST',
